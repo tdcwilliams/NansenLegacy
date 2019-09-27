@@ -61,9 +61,6 @@ def parse_args(args):
             help='Generate plot of AROME and the new domains')
     return parser.parse_args(args)
 
-def simple(inp_arg):
-    return inp_arg
-
 def precipitation_amount_acc(ec_TP):
     """ Calculate accumulated precipitation amount
 
@@ -439,15 +436,15 @@ def export(outfile, ar_ds, dst_ecp, dst_vec, dst_shape):
 DST_VARS = {
     'x_wind_10m' : {
         'ec_vars': ['10U'],
-        'ec_func': simple,
+        'ec_func': lambda x: x,
         },
     'y_wind_10m' : {
         'ec_vars': ['10V'],
-        'ec_func': simple,
+        'ec_func': lambda x: x,
         },
     'air_temperature_2m': {
         'ec_vars': ['2T'],
-        'ec_func': simple,
+        'ec_func': lambda x: x,
         },
     'specific_humidity_2m': {
         'ec_vars': ['2D', 'MSL'],
@@ -455,15 +452,15 @@ DST_VARS = {
         },
     'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time': {
         'ec_vars': ['SSRD'],
-        'ec_func': simple,
+        'ec_func': lambda x: x,
         },
     'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time' : {
         'ec_vars': ['STRD'],
-        'ec_func': simple,
+        'ec_func': lambda x: x,
         },
     'air_pressure_at_sea_level': {
         'ec_vars': ['MSL'],
-        'ec_func': simple,
+        'ec_func': lambda x: x,
         },
     'precipitation_amount_acc': {
         'ec_vars': ['TP'],
@@ -474,29 +471,19 @@ DST_VARS = {
         'ec_func': integral_of_snowfall_amount_wrt_time,
         },
     }
-#DST_VARS = {
-#    'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time': {
-#        'ec_vars': ['SSRD'],
-#        'ec_func': simple,
-#        },
-#    }
-#DST_VARS = {
-#    'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time': {
-#        'ec_vars': ['STRD'],
-#        'ec_func': simple,
-#        },
-#    }
-
-
-# pre interpolation - either just get variable or modified cumsum
-# then interpolate
-# then transform (eg np.diff will reaccumulate)
-
 #dst_var = 'air_temperature_2m'
+#dst_var = 'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time'
+#dst_var = 'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time'
 #DST_VARS = {dst_var: DST_VARS[dst_var]}
 
-if __name__ == '__main__':
-    args = parse_args(sys.argv[1:])
+def run(args):
+    '''
+    make the file
+
+    Parameters:
+    -----------
+    args : argparse.Namespace
+    '''
     outdir = os.path.split(NEW_FILEMASK)[0]
     nsl.make_dir(outdir)
     outfile = os.path.join(outdir, NEW_FILEMASK % args.date)
@@ -576,3 +563,7 @@ if __name__ == '__main__':
 
     # save the output
     export(outfile, ar_ds, dst_ecp, dst_vec, dst_shape)
+
+if __name__ == '__main__':
+    args = parse_args(sys.argv[1:])
+    run(args)
