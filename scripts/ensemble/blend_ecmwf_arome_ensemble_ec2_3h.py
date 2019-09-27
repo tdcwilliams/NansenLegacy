@@ -32,7 +32,7 @@ EC_REFDATE = dt.datetime(1900, 1, 1)
 EC_ACC_VARS = ['ssrd', 'strd', 'sf']
 
 TIME_RECS_PER_DAY = 8
-NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended/ec2_arome_blended_ensemble_%Y%m%d.nc'
+NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended_v2/ec2_arome_blended_ensemble_%Y%m%d.nc'
 
 # Destination grid
 # neXtSIM default projection
