@@ -2,6 +2,7 @@
 import os
 import sys
 import argparse
+import datetime as dt
 
 import cartopy
 import cartopy.crs as ccrs
@@ -10,7 +11,6 @@ from netCDF4 import Dataset
 import numpy as np
 import pyproj
 from scipy.interpolate import RegularGridInterpolator
-from scipy.ndimage.filters import minimum_filter
 from scipy.ndimage import distance_transform_edt
 
 from pynextsim.projection_info import ProjectionInfo
@@ -24,12 +24,15 @@ DST_DATA = {}
 _KELVIN = 273.15 # [C]
 
 # filenames
-AR_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/processed/aro_eps_%s.nc'
+AR_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/processed/aro_eps_%Y%m%d.nc'
 AR_MARGIN = 20 # pixels
-TIME_RECS_PER_DAY = 8
 
 EC_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/legacy_201803_3h.nc'
-NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended/ec2_arome_blended_ensemble_%s.nc'
+EC_REFDATE = dt.datetime(1900, 1, 1)
+EC_ACC_VARS = ['ssrd', 'strd', 'sf']
+
+TIME_RECS_PER_DAY = 8
+NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended/ec2_arome_blended_ensemble_%Y%m%d.nc'
 
 # Destination grid
 # neXtSIM default projection
@@ -40,8 +43,8 @@ DST_X_MIN = -300000
 DST_X_MAX =  2800000
 DST_Y_MIN = -2000000
 DST_Y_MAX =  1500000
-DST_X_RES, DST_Y_RES = 2500, 2500
-#DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
+#DST_X_RES, DST_Y_RES = 2500, 2500
+DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
 
 # extent overlaps with FRAM strait
 #DST_X_MIN = -450000
@@ -50,12 +53,13 @@ DST_X_RES, DST_Y_RES = 2500, 2500
 #DST_Y_MAX =  300000
 #DST_X_RES, DST_Y_RES = 5000, 5000
 
+VALID_DATE = lambda x : dt.datetime.strptime(x, '%Y%m%d')
 
 def parse_args(args):
     ''' parse input arguments '''
     parser = argparse.ArgumentParser(
             description="Blend ECMWF and AROME ensemble outputs on high resolution grid")
-    parser.add_argument('date', type=str,
+    parser.add_argument('date', type=VALID_DATE,
             help='input date (YYYYMMDD)')
     parser.add_argument('-p', '--plot', action='store_true',
             help='Generate plot of AROME and the new domains')
@@ -150,7 +154,7 @@ def open_arome(date):
 
     Parameters
     ----------
-    date : str
+    date : datetime.datetime
         date of AROME file
 
     Returns
@@ -163,23 +167,17 @@ def open_arome(date):
         AROME time, y, x coordinates
 
     """
-    ar_filename = AR_FILEMASK % date
+    ar_filename = date.strftime(AR_FILEMASK)
     print('\nOpening AROME file %s' %ar_filename)
     ar_ds = Dataset(ar_filename)
     ar_proj = pyproj.Proj(ar_ds.variables['projection_lambert'].proj4)
     ar_x_vec = ar_ds.variables['x'][:].data
     ar_y_vec = ar_ds.variables['y'][:].data
     ar_t_vec = np.linspace(0, 24, TIME_RECS_PER_DAY+1)[:-1]
-
     return ar_ds, ar_proj, (ar_t_vec, ar_y_vec, ar_x_vec)
 
-def open_ecmwf(date):
+def open_ecmwf():
     """ Read ECMWF geolocation
-
-    Parameters
-    ----------
-    date : str
-        date of ECMWF file in YYYYMMDD format
 
     Returns
     -------
@@ -187,36 +185,62 @@ def open_ecmwf(date):
         ECMWF dataset
     ec_pts : tuple with three 1D-ndarrays
         ECMWF time, latitude, longitude coordinates
-
     """
-    ec_filename = EC_FILEMASK % date
+    ec_filename = EC_FILEMASK
     print('Opening ECMWF file %s\n' %ec_filename)
     ec_ds = Dataset(ec_filename)
-    ec_lon_vec = ec_ds.variables['lon'][:]
-    # a hack to interpolate EC values also onto -180 degrees bins
-    ec_lon_vec[0] = -180 #
-    ec_lat_vec = ec_ds.variables['lat'][:]
-    ec_time_vec = np.linspace(0, 24, TIME_RECS_PER_DAY+1)
+    # make lon cyclic
+    ec_lon_vec = np.array(
+            list(ec_ds.variables['longitude'][:]) + [180])
+    # flip lat
+    ec_lat_vec = ec_ds.variables['latitude'][::-1]
+    ec_time_vec = np.linspace(0, 24, TIME_RECS_PER_DAY+1)[:-1]
     return ec_ds, (ec_time_vec, ec_lat_vec, ec_lon_vec)
+
+def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
+    '''
+    need to flip lat, and make lon cyclic
+
+    Parameters:
+    -----------
+    ec_ds : netCDF4.Dataset
+    vname : str
+        name of ec2 variable
+    in_ec2_time_range : np.ndarray(bool)
+        tells which time indices to use
+
+    Returns:
+    --------
+    ec2_var : np.ndarray(float)
+    '''
+    v = ec_ds.variables[
+            ec_var_name][in_ec2_time_range,::-1,:]
+    nt, nlat, nlon = v.shape
+    v2 = np.zeros((nt, nlat, nlon+1))
+    v2[:,:,:-1] = v
+    v2[:,:,-1] = v2[:,:,0]
+
+    if ec_var_name in EC_ACC_VARS:
+        # need to deaccumulate
+        return np.gradient(v2, axis=0)
+    return v2
 
 def test_ec2_time_range(ec_ds, date):
     '''
     Parameters:
     -----------
     ec_ds : netCDF4.Dataset
-    date : str
-        date in YYYYMMDD format
+    date : datetime.datetime
 
     Returns:
     --------
     in_range : numpy.ndarray (bool)
     '''
-    dto = dt.datetime.strptime(date, '%Y%m%d')
     ec_time_raw = ec_ds.variables['time'][:].astype(float)
     ec_time = np.array([
-        _EC_REFDATE + dt.timedelta(hours=h)
+        EC_REFDATE + dt.timedelta(hours=h)
         for h in ec_time_raw])
-    in_range = (ec_time >= dto)*(ec_time < dto + dt.timedelta(1))
+    in_range = (ec_time >= date)*(ec_time < date + dt.timedelta(1))
     return in_range
 
 def set_destination_coordinates(ar_proj, ar_ds):
@@ -237,7 +261,6 @@ def set_destination_coordinates(ar_proj, ar_ds):
         destination coordinates for AROME (time, y, x)
     dst_shape : tuple
         shape of destination grid
-
     """
     # coordinates on destination grid
     # X,Y (NEXTSIM)
@@ -311,13 +334,13 @@ def plot_destination_grid(figname, ar_proj, ar_pts):
     plt.savefig(figname)
     plt.close()
 
-def create_distance(ar_data):
+def create_distance(ar_shp):
     """ Create 3D matrix (same shape as AROME data) with distance from the border in pixels
 
     Parameters
     ----------
-    ar_data : numpy.ndarray
-        any 3D array (from AROME dataset)
+    ar_shp : list
+        shape of AROME variables
 
     Returns
     -------
@@ -325,7 +348,7 @@ def create_distance(ar_data):
         3D array with euclidian distance from the border (pix)
 
     """
-    mask = np.ones(ar_var[0].shape, bool)
+    mask = np.ones(ar_shp[1:], bool)
     # put False into all border pixels (on a 2D matrix)
     mask[0,:] = False
     mask[-1,:] = False
@@ -334,7 +357,7 @@ def create_distance(ar_data):
     # calculate distance from the border (from False pixels)
     dist2d = distance_transform_edt(mask, return_distances=True, return_indices=False)
     # convert 2D into 3D
-    return np.array([dist2d]*24)
+    return np.array([dist2d]*TIME_RECS_PER_DAY)
 
 def blend(ar_data, ec_data, distance):
     """ Blend 2 3D matrices with AROME and ECMWF products into one using weighted average.
@@ -435,46 +458,49 @@ def export(outfile, ar_ds, dst_ecp, dst_vec, dst_shape):
 # Destination variables
 DST_VARS = {
     'x_wind_10m' : {
-        'ec_vars': ['10U'],
+        'ec_vars': ['u10'],
         'ec_func': lambda x: x,
         },
     'y_wind_10m' : {
-        'ec_vars': ['10V'],
+        'ec_vars': ['v10'],
         'ec_func': lambda x: x,
         },
     'air_temperature_2m': {
-        'ec_vars': ['2T'],
+        'ec_vars': ['t2m'],
         'ec_func': lambda x: x,
         },
     'specific_humidity_2m': {
-        'ec_vars': ['2D', 'MSL'],
+        'ec_vars': ['d2m', 'msl'],
         'ec_func': specific_humidity_2m,
         },
     'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time': {
-        'ec_vars': ['SSRD'],
+        'ec_vars': ['ssrd'],
         'ec_func': lambda x: x,
         },
     'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time' : {
-        'ec_vars': ['STRD'],
+        'ec_vars': ['strd'],
         'ec_func': lambda x: x,
         },
     'air_pressure_at_sea_level': {
-        'ec_vars': ['MSL'],
+        'ec_vars': ['msl'],
         'ec_func': lambda x: x,
         },
     'precipitation_amount_acc': {
-        'ec_vars': ['TP'],
+        'ec_vars': ['tp'],
         'ec_func': precipitation_amount_acc,
         },
     'integral_of_snowfall_amount_wrt_time' : {
-        'ec_vars': ['2T', 'TP'],
+        'ec_vars': ['t2m', 'tp'],
         'ec_func': integral_of_snowfall_amount_wrt_time,
         },
     }
-#dst_var = 'air_temperature_2m'
-#dst_var = 'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time'
-#dst_var = 'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time'
-#DST_VARS = {dst_var: DST_VARS[dst_var]}
+
+if 0:
+    # test on smaller subset of variables
+    #dst_var = 'air_temperature_2m'
+    dst_var = 'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time'
+    #dst_var = 'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time'
+    DST_VARS = {dst_var: DST_VARS[dst_var]}
 
 def run(args):
     '''
@@ -486,11 +512,11 @@ def run(args):
     '''
     outdir = os.path.split(NEW_FILEMASK)[0]
     nsl.make_dir(outdir)
-    outfile = os.path.join(outdir, NEW_FILEMASK % args.date)
+    outfile = os.path.join(outdir, args.date.strftime(NEW_FILEMASK))
 
     # open arome file and ecmwf file
     ar_ds, ar_proj, ar_pts = open_arome(args.date)
-    ec_ds, ec_pts = open_ecmwf(args.date)
+    ec_ds, ec_pts = open_ecmwf()
     in_ec2_time_range = test_ec2_time_range(ec_ds, args.date)
 
     if args.plot:
@@ -503,7 +529,7 @@ def run(args):
             dst_shape) = set_destination_coordinates(ar_proj, ar_ds)
 
     dst_ardist_grd = None
-    ar_shp = [len(ar_pts[i]) for i in range(3)]
+    ar_shp = [len(v) for v in ar_pts]
 
     # fetch, interpolate and blend all variables from ECMWF and AROME
     num_ens_mems = ar_ds.dimensions['ensemble_member'].size
@@ -512,15 +538,16 @@ def run(args):
         print('Interpolate', dst_var_name)
         dst_ard_grd_all_members = []
         for i_ens in range(num_ens_mems):
+            print('- AROME ensemble member: %i' %i_ens)
             ar_var = np.zeros(ar_shp) #convert to 3d array
-            #ar_var[:] = ar_ds[dst_var_name][:TIME_RECS_PER_DAY, 0, i_ens, :, :]
             ar_var[:] = ar_ds[dst_var_name][:TIME_RECS_PER_DAY, i_ens, :, :]
+
             dst_ard_grd_all_members.append(
                     interpolate(ar_var, ar_pts, dst_arp, dst_shape))
 
         # distance to AROME border
         if dst_ardist_grd is None:
-            ar_dist = create_distance(ar_var)
+            ar_dist = create_distance(ar_shp)
             dst_ardist_grd = interpolate(ar_dist, ar_pts, dst_arp, dst_shape)
 
         # Interpolate data from ECMWF
@@ -529,29 +556,37 @@ def run(args):
             if ec_var_name in EC_DATA:
                 continue
             print('Interpolate', ec_var_name)
-            ec_var = ec_ds.variables[
-                    ec_var_name][in_ec2_time_range,:,:] #no more preproc needed
+            #ec_var = ec_ds.variables[
+            #        ec_var_name][in_ec2_time_range,:,:] #no more preproc needed
+            ec_var = get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range)
             dst_ecd_grd = interpolate(ec_var, ec_pts, dst_ecp, dst_shape)
             EC_DATA[ec_var_name] = dst_ecd_grd
 
         # Compute destination product from ECMWF data
         ec_args = [EC_DATA[ec_var_name] for ec_var_name in ec_var_names]
         dst_ecd_grd = DST_VARS[dst_var_name]['ec_func'](*ec_args)
-        for n in []: #range(8): 
-            figname = 'figs0/ec_%s_%i.png' %(dst_var_name, n)
-            print('Saving %s' %figname)
-            plt.imshow(dst_ecd_grd[n,:,:], origin='upper')
-            plt.colorbar()
-            plt.title(dst_var_name)
-            plt.savefig(figname)
-            plt.close() 
-            figname = 'figs0/ar_%s_%i.png' %(dst_var_name, n)
-            print('Saving %s' %figname)
-            plt.imshow(dst_ard_grd_all_members[0][n,:,:], origin='upper')
-            plt.colorbar()
-            plt.title(dst_var_name)
-            plt.savefig(figname)
-            plt.close() 
+        if 0:
+            # test plots
+            kw = dict(vmin=0, vmax=3e6)
+            for n in range(8): 
+                nsl.make_dir('figs0')
+                figname = 'figs0/ec_%s_%i.png' %(dst_var_name, n)
+                print('Saving %s' %figname)
+                plt.imshow(dst_ecd_grd[n,:,:],
+                        origin='upper', **kw)
+                plt.colorbar()
+                plt.title(dst_var_name)
+                plt.savefig(figname)
+                plt.close() 
+
+                figname = 'figs0/ar_%s_%i.png' %(dst_var_name, n)
+                print('Saving %s' %figname)
+                plt.imshow(dst_ard_grd_all_members[0][n,:,:],
+                        origin='upper', **kw)
+                plt.colorbar()
+                plt.title(dst_var_name)
+                plt.savefig(figname)
+                plt.close() 
 
         # blend and add to destination data
         sz = list(dst_ardist_grd.shape)
