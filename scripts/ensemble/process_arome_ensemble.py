@@ -21,6 +21,7 @@ import pynextsim.lib as nsl
 AR_FILEMASK_RAW = '/Data/sim/data/AROME_barents_ensemble/raw/aro_eps_%Y%m%d00.nc'
 AR_FILEMASK_NEW = '/Data/sim/data/AROME_barents_ensemble/processed/aro_eps_%Y%m%d.nc'
 AR_TIME_RECS_PER_DAY = 8
+KW_COMPRESSION = dict(zlib=True)
 
 DST_VARS = [
         ('x_wind_10m', 'instantaneous'),
@@ -46,8 +47,6 @@ def parse_args(args):
             ''')
     parser.add_argument('date', type=VALID_DATE,
             help='input date (YYYYMMDD)')
-    parser.add_argument('-o', '--outdir', default='.',
-            help='Where to save the generated netcdf files and figures')
     return parser.parse_args(args)
 
 def open_arome(date):
@@ -197,7 +196,8 @@ def create_dimensions(ar_ds, dst_ds, dst_vec):
     for dim_name, dim_vec in dst_vec.items():
         dlen = {'time': None}.get(dim_name, len(dim_vec)) # time should be unlimited
         dst_dim = dst_ds.createDimension(dim_name, dlen)
-        dst_var = dst_ds.createVariable(dim_name, 'f8', (dim_name,))
+        dst_var = dst_ds.createVariable(
+                dim_name, 'f8', (dim_name,), **KW_COMPRESSION)
         ar_var = ar_ds.variables[dim_name]
         for ncattr in ar_var.ncattrs():
             dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
@@ -212,7 +212,8 @@ def create_dimensions(ar_ds, dst_ds, dst_vec):
 
     # add lon/lat
     for var_name in ['longitude', 'latitude']:
-        dst_var = dst_ds.createVariable(var_name, 'f8', ('y', 'x',))
+        dst_var = dst_ds.createVariable(
+                var_name, 'f8', ('y', 'x',), **KW_COMPRESSION)
         ar_var = ar_ds.variables[var_name]
         for ncattr in ar_var.ncattrs():
             dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
@@ -240,10 +241,11 @@ def create_variables(ar_ds, ar_ds2, dst_ds, dst_vec, dst_shape):
             instantaneous=get_ar_inst_var,
             accumulated=get_ar_accum_var,
             )
+    dims = ('time', 'ensemble_member', 'y', 'x',)
     for dst_var_name, vtype in DST_VARS:
         print(dst_var_name, vtype, sep=': ')
-        dst_var = dst_ds.createVariable(dst_var_name, 'f4',
-                ('time', 'ensemble_member', 'y', 'x',))
+        dst_var = dst_ds.createVariable(
+                dst_var_name, 'f4', dims, **KW_COMPRESSION)
         array = get_var_funs[vtype](
                 ar_ds, ar_ds2, dst_var_name, dst_shape)
         ar_var = ar_ds.variables[dst_var_name]
