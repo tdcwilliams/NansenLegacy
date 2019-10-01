@@ -23,22 +23,17 @@ AR_FILEMASK_NEW = '/Data/sim/data/AROME_barents_ensemble/processed/aro_eps_%Y%m%
 AR_TIME_RECS_PER_DAY = 8
 
 DST_VARS = [
-        'x_wind_10m',
-        'y_wind_10m',
-        'air_temperature_2m',
-        'specific_humidity_2m',
-        'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time',
-        'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time',
-        'air_pressure_at_sea_level',
-        'precipitation_amount_acc',
-        'integral_of_snowfall_amount_wrt_time',
+        ('x_wind_10m', 'instantaneous'),
+        ('y_wind_10m', 'instantaneous'),
+        ('air_temperature_2m', 'instantaneous'),
+        ('specific_humidity_2m', 'instantaneous'),
+        ('integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time', 'accumulated'),
+        ('integral_of_surface_downwelling_longwave_flux_in_air_wrt_time', 'accumulated'),
+        ('air_pressure_at_sea_level', 'instantaneous'),
+        ('precipitation_amount_acc', 'accumulated'),
+        ('integral_of_snowfall_amount_wrt_time', 'accumulated'),
         ]
-#DST_VARS = [
-#        'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time',
-#        ]
-
-def valid_date(date):
-    return dt.datetime.strptime(date, '%Y%m%d')
+VALID_DATE = lambda x : dt.datetime.strptime(x, '%Y%m%d')
 
 def parse_args(args):
     ''' parse input arguments '''
@@ -49,7 +44,7 @@ def parse_args(args):
             - also need to deaccumulate the integrated variables (they are relative to 00:00 for
               the start date of the file)
             ''')
-    parser.add_argument('date', type=valid_date,
+    parser.add_argument('date', type=VALID_DATE,
             help='input date (YYYYMMDD)')
     parser.add_argument('-o', '--outdir', default='.',
             help='Where to save the generated netcdf files and figures')
@@ -123,83 +118,90 @@ def set_destination_coordinates(ar_proj, ar_ds, ar_ds2):
     dst_shape = [len(v) for v in dst_vec.values()]
     return dst_vec, dst_shape
 
-def proc_ar_var(vname, array):
-    if vname in [
-            'x_wind_10m',
-            'y_wind_10m',
-            'air_temperature_2m',
-            'specific_humidity_2m',
-            'air_pressure_at_sea_level',
-            ]:
-        # instaneous variable
-        print('Getting %s (instantaneous)' %vname)
-        return array[1:]
+def get_ar_inst_var(ar_ds, ar_ds2, dst_var_name, shp):
+    '''
+    get instantaneous variable
+    Need 2 files (00:00 is 24:00 from the day before)
 
-    # deaccumulate
-    print('Deaccumulating %s' %vname)
-    shp = list(array.shape)
-    shp[0] -= 1
-    out = np.zeros(shp)
-    out[0] = np.diff(array[:2], axis=0) # take diff of 1st 2
-    out[1] = array[2] # just grab the next one (03:00 - diff to 00:00)
-    out[2:] = np.diff(array[2:], axis=0)
-    return out
-
-def export(outfile, ar_ds, ar_ds2, dst_vec, dst_shape):
-    """ Export blended product
-
-    Parameters
-    ----------
-    outfile : str
-        netcdf output filename
+    Parameters:
+    -----------
     ar_ds : netCDF4.Dataset
         source AROME dataset
+    ar_ds : netCDF4.Dataset
+        source AROME dataset from day before
+    var_name : str
+        variable name
+    shp : tuple
+        shape of destination variable
+
+    Returns:
+    --------
+    array : numpy.ndarray
+    '''
+    array = np.zeros(shp)
+    # get 03:00, 06:00, ..., 21:00 for current day
+    # from current day's file
+    array[1:AR_TIME_RECS_PER_DAY+1,:,:,:] = ar_ds.variables[
+                dst_var_name][:AR_TIME_RECS_PER_DAY-1,0,:,:,:]
+    # 00:00 of current day from previous day's file
+    array[0,:,:,:] = ar_ds2.variables[
+            dst_var_name][AR_TIME_RECS_PER_DAY-1:AR_TIME_RECS_PER_DAY,0,:,:,:]
+    return array
+
+def get_ar_accum_var(ar_ds, ar_ds2, dst_var_name, shp):
+    '''
+    get accumulated variable
+    Need 2 files (00:00 is 24:00 from the day before)
+
+    Parameters:
+    -----------
+    ar_ds : netCDF4.Dataset
+        source AROME dataset
+    ar_ds : netCDF4.Dataset
+        source AROME dataset from day before
+    var_name : str
+        variable name
+    shp : tuple
+        shape of destination variable
+
+    Returns:
+    --------
+    array : numpy.ndarray
+    '''
+    array = np.zeros(shp)
+    # get 03:00, 06:00, ..., 21:00 for current day
+    # from current day's file
+    tmp = ar_ds.variables[
+            dst_var_name][:AR_TIME_RECS_PER_DAY-1,0,:,:,:]
+    array[1:AR_TIME_RECS_PER_DAY+1,:,:,:] = np.gradient(tmp, axis=0)
+    # 00:00 of current day from previous day's file
+    tmp = ar_ds2.variables[
+            dst_var_name][AR_TIME_RECS_PER_DAY-2:AR_TIME_RECS_PER_DAY,0,:,:,:]
+    array[0,:,:,:] = np.diff(tmp, axis=0)
+    return array
+
+def create_dimensions(ar_ds, dst_ds, dst_vec):
+    '''
+    add dimensions, lon, lat and projection
+
+    Parameters:
+    -----------
+    ar_ds : netCDF4.Dataset
+        source AROME dataset
+    dst_ds : netCDF4.Dataset
+        target AROME dataset
     dst_vec : dict
         three vectors with destination coordinates (time, ensemble_member, y, x)
-    dst_shape : tuple
-        shape of destination grid
-
-    """
-    # Create dataset for output
-    skip_var_attr = ['_FillValue', 'grid_mapping']
-    # create dataset
-    print('Exporting %s' %outfile)
-    dst_ds = Dataset(outfile, 'w')
-    # add dimensions
+    '''
+    # add the dimensions
     for dim_name, dim_vec in dst_vec.items():
-        dst_dim = dst_ds.createDimension(dim_name, len(dim_vec))
+        dlen = {'time': None}.get(dim_name, len(dim_vec)) # time should be unlimited
+        dst_dim = dst_ds.createDimension(dim_name, dlen)
         dst_var = dst_ds.createVariable(dim_name, 'f8', (dim_name,))
-        dst_var[:] = dim_vec
         ar_var = ar_ds.variables[dim_name]
         for ncattr in ar_var.ncattrs():
             dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
-
-    # add array variables
-    for dst_var_name in DST_VARS:
-        dst_var = dst_ds.createVariable(dst_var_name, 'f4',
-                ('time', 'ensemble_member', 'y', 'x',))
-        shp = list(dst_shape)
-        shp.insert(1, 1) # extra dimension: height above sea level
-        shp[0] += 1 # get the time from before to deaccumulate
-        array = np.zeros(shp)
-        # get 03:00, 06:00, ..., 21:00 for current day
-        array[2:AR_TIME_RECS_PER_DAY+2,:,:,:] = ar_ds.variables[
-                    dst_var_name][:AR_TIME_RECS_PER_DAY-1,:,:,:]
-        # 21:00 from day before and 00:00 of current day
-        array[0:2,:,:,:] = ar_ds2.variables[
-                dst_var_name][AR_TIME_RECS_PER_DAY-2:AR_TIME_RECS_PER_DAY,:,:,:]
-        if 0:
-            print('save %s.npz' %dst_var_name)
-            np.savez('%s.npz' %dst_var_name,
-                    orig=array, deacc=proc_ar_var(dst_var_name, array))
-        dst_var[:] = np.reshape(
-                proc_ar_var(dst_var_name, array), dst_shape)
-        ar_var = ar_ds.variables[dst_var_name]
-        for ncattr in ar_var.ncattrs():
-            if ncattr in skip_var_attr:
-                continue
-            dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
-        dst_var.setncattr('grid_mapping', 'projection_lambert')
+        dst_var[:] = dim_vec
 
     # add projection variable
     dst_var_name = 'projection_lambert'
@@ -216,17 +218,67 @@ def export(outfile, ar_ds, ar_ds2, dst_vec, dst_shape):
             dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
         dst_var[:] = ar_var[:]
 
-    dst_ds.close()
+def create_variables(ar_ds, ar_ds2, dst_ds, dst_vec, dst_shape):
+    '''
+    create the time-dependent variables
 
+    Parameters:
+    -----------
+    ar_ds : netCDF4.Dataset
+        source AROME dataset
+    ar_ds2 : netCDF4.Dataset
+        source AROME dataset from previous day
+        (we need the 24:00 record for that day)
+    dst_ds : netCDF4.Dataset
+        target AROME dataset
+    dst_vec : dict
+        three vectors with destination coordinates (time, ensemble_member, y, x)
+    dst_shape : tuple
+        shape of destination grid
+    '''
+    get_var_funs = dict(
+            instantaneous=get_ar_inst_var,
+            accumulated=get_ar_accum_var,
+            )
+    for dst_var_name, vtype in DST_VARS:
+        print(dst_var_name, vtype, sep=': ')
+        dst_var = dst_ds.createVariable(dst_var_name, 'f4',
+                ('time', 'ensemble_member', 'y', 'x',))
+        array = get_var_funs[vtype](
+                ar_ds, ar_ds2, dst_var_name, dst_shape)
+        ar_var = ar_ds.variables[dst_var_name]
+        for ncattr in ar_var.ncattrs():
+            if ncattr in ['_FillValue', 'grid_mapping']:
+                continue
+            dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
+        dst_var.setncattr('grid_mapping', 'projection_lambert')
+        dst_var[:] = np.reshape(array, dst_shape)
 
-if __name__ == '__main__':
-    args = parse_args(sys.argv[1:])
-    nsl.make_dir(args.outdir)
+def run(args):
+    '''
+    process one day's AROME file
+
+    Parameters:
+    -----------
+    args : argparse.Namespace
+        parsed command line arguments
+    '''
 
     ar_ds, ar_ds2, ar_proj, ar_pts = open_arome(args.date)
     dst_vec, dst_shape = set_destination_coordinates(ar_proj, ar_ds, ar_ds2)
 
     # save the output
-    outfile = os.path.join(args.outdir,
-            args.date.strftime(AR_FILEMASK_NEW))
-    export(outfile, ar_ds, ar_ds2, dst_vec, dst_shape)
+    outfile = args.date.strftime(AR_FILEMASK_NEW)
+    outdir = os.path.split(outfile)[0]
+    nsl.make_dir(outdir)
+    print('Exporting %s' %outfile)
+    with Dataset(outfile, 'w') as dst_ds:
+        create_dimensions(ar_ds, dst_ds, dst_vec)
+        create_variables(ar_ds, ar_ds2, dst_ds,
+                dst_vec, dst_shape)
+
+    for ds in [ar_ds, ar_ds2]:
+        ds.close()
+
+if __name__ == '__main__':
+    run(parse_args(sys.argv[1:]))
