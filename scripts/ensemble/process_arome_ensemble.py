@@ -18,23 +18,30 @@ from scipy.ndimage import distance_transform_edt
 from pynextsim.projection_info import ProjectionInfo
 import pynextsim.lib as nsl
 
+VALID_DATE = lambda x : dt.datetime.strptime(x, '%Y%m%d')
+
 AR_FILEMASK_RAW = '/Data/sim/data/AROME_barents_ensemble/raw/aro_eps_%Y%m%d00.nc'
 AR_FILEMASK_NEW = '/Data/sim/data/AROME_barents_ensemble/processed/aro_eps_%Y%m%d.nc'
 AR_TIME_RECS_PER_DAY = 8
 KW_COMPRESSION = dict(zlib=True)
 
-DST_VARS = [
-        ('x_wind_10m', 'instantaneous'),
-        ('y_wind_10m', 'instantaneous'),
-        ('air_temperature_2m', 'instantaneous'),
-        ('specific_humidity_2m', 'instantaneous'),
-        ('integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time', 'accumulated'),
-        ('integral_of_surface_downwelling_longwave_flux_in_air_wrt_time', 'accumulated'),
-        ('air_pressure_at_sea_level', 'instantaneous'),
-        ('precipitation_amount_acc', 'accumulated'),
-        ('integral_of_snowfall_amount_wrt_time', 'accumulated'),
-        ]
-VALID_DATE = lambda x : dt.datetime.strptime(x, '%Y%m%d')
+if 1:
+    DST_VARS = [
+            ('x_wind_10m', 'instantaneous'),
+            ('y_wind_10m', 'instantaneous'),
+            ('air_temperature_2m', 'instantaneous'),
+            ('specific_humidity_2m', 'instantaneous'),
+            ('integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time', 'accumulated'),
+            ('integral_of_surface_downwelling_longwave_flux_in_air_wrt_time', 'accumulated'),
+            ('air_pressure_at_sea_level', 'instantaneous'),
+            ('precipitation_amount_acc', 'accumulated'),
+            ('integral_of_snowfall_amount_wrt_time', 'accumulated'),
+            ]
+else:
+    # reduce number of variables for testing
+    DST_VARS = [
+            ('integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time', 'accumulated'),
+            ]
 
 def parse_args(args):
     ''' parse input arguments '''
@@ -79,7 +86,6 @@ def open_arome(date):
     ar_x_vec = ar_ds.variables['x'][:].data
     ar_y_vec = ar_ds.variables['y'][:].data
     ar_t_vec = np.linspace(0, 24, AR_TIME_RECS_PER_DAY+1)[:-1]
-
     return ar_ds, ar_ds2, ar_proj, (ar_t_vec, ar_y_vec, ar_x_vec)
 
 def set_destination_coordinates(ar_proj, ar_ds, ar_ds2):
@@ -168,15 +174,21 @@ def get_ar_accum_var(ar_ds, ar_ds2, dst_var_name, shp):
     array : numpy.ndarray
     '''
     array = np.zeros(shp)
-    # get 03:00, 06:00, ..., 21:00 for current day
+    nt, ne, nlat, nlon = shp
+    tmp = np.zeros([nt+1, ne, nlat, nlon])
+    # Get 03:00, 06:00, ..., 21:00 for current day
     # from current day's file
-    tmp = ar_ds.variables[
-            dst_var_name][:AR_TIME_RECS_PER_DAY-1,0,:,:,:]
-    array[1:AR_TIME_RECS_PER_DAY+1,:,:,:] = np.gradient(tmp, axis=0)
+    # - read 3:00 - 24:00 and take gradient
+    # - value at 00:00 is 0
+    tmp[1:,:,:,:] = ar_ds.variables[
+            dst_var_name][:AR_TIME_RECS_PER_DAY,0,:,:,:]
+    array[1:AR_TIME_RECS_PER_DAY+1,:,:,:] = np.gradient(
+            tmp, axis=0)[1:-1,:,:,:]
     # 00:00 of current day from previous day's file
+    # - get 21:00, 24:00, 27:00 and take gradient
     tmp = ar_ds2.variables[
-            dst_var_name][AR_TIME_RECS_PER_DAY-2:AR_TIME_RECS_PER_DAY,0,:,:,:]
-    array[0,:,:,:] = np.diff(tmp, axis=0)
+            dst_var_name][AR_TIME_RECS_PER_DAY-2:AR_TIME_RECS_PER_DAY+1,0,:,:,:]
+    array[0,:,:,:] = np.gradient(tmp, axis=0)[1,:,:,:]
     return array
 
 def create_dimensions(ar_ds, dst_ds, dst_vec):
