@@ -43,8 +43,8 @@ DST_X_MIN = -300000
 DST_X_MAX =  2800000
 DST_Y_MIN = -2000000
 DST_Y_MAX =  1500000
-#DST_X_RES, DST_Y_RES = 2500, 2500
-DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
+DST_X_RES, DST_Y_RES = 2500, 2500
+#DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
 
 # extent overlaps with FRAM strait
 #DST_X_MIN = -450000
@@ -54,6 +54,7 @@ DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
 #DST_X_RES, DST_Y_RES = 5000, 5000
 
 VALID_DATE = lambda x : dt.datetime.strptime(x, '%Y%m%d')
+KW_COMPRESSION = dict(zlib=True)
 
 def parse_args(args):
     ''' parse input arguments '''
@@ -409,8 +410,10 @@ def export(outfile, ar_ds, dst_ecp, dst_vec, dst_shape):
     dst_ds = Dataset(outfile, 'w')
     # add dimensions
     for dim_name, dim_vec in dst_vec.items():
-        dst_dim = dst_ds.createDimension(dim_name, len(dim_vec))
-        dst_var = dst_ds.createVariable(dim_name, 'f8', (dim_name,))
+        dlen = {'time': None}.get(dim_name, len(dim_vec)) #time should be unlimited
+        dst_dim = dst_ds.createDimension(dim_name, dlen)
+        dst_var = dst_ds.createVariable(
+                dim_name, 'f8', (dim_name,), **KW_COMPRESSION)
         dst_var[:] = dim_vec
         ar_var = ar_ds.variables[dim_name]
         for ncattr in ar_var.ncattrs():
@@ -421,7 +424,8 @@ def export(outfile, ar_ds, dst_ecp, dst_vec, dst_shape):
     # add blended variables
     for dst_var_name in DST_VARS:
         dst_var = dst_ds.createVariable(dst_var_name, 'f4',
-                ('time', 'ensemble_member', 'y', 'x',))
+                ('time', 'ensemble_member', 'y', 'x',),
+                **KW_COMPRESSION)
         dst_var[:] = DST_DATA[dst_var_name]
         ar_var = ar_ds.variables[dst_var_name]
         for ncattr in ar_var.ncattrs():
@@ -447,7 +451,8 @@ def export(outfile, ar_ds, dst_ecp, dst_vec, dst_shape):
     dst_lon_grd = dst_ecp[:, 2].reshape(dst_shape)[0]
     dst_lat_grd = dst_ecp[:, 1].reshape(dst_shape)[0]
     for var_name in ['longitude', 'latitude']:
-        dst_var = dst_ds.createVariable(var_name, 'f8', ('y', 'x',))
+        dst_var = dst_ds.createVariable(
+                var_name, 'f8', ('y', 'x',), **KW_COMPRESSION)
         ar_var = ar_ds.variables[var_name]
         for ncattr in ar_var.ncattrs():
             dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
@@ -494,7 +499,6 @@ DST_VARS = {
         'ec_func': integral_of_snowfall_amount_wrt_time,
         },
     }
-
 if 0:
     # test on smaller subset of variables
     #dst_var = 'air_temperature_2m'
