@@ -29,7 +29,7 @@ AR_MARGIN = 20 # pixels
 
 EC_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/legacy_201803_3h.nc'
 EC_REFDATE = dt.datetime(1900, 1, 1)
-EC_ACC_VARS = ['ssrd', 'strd', 'sf']
+EC_ACC_VARS = ['ssrd', 'strd', 'tp', 'sf'] #ec2 variables that need to be deaccumulated
 
 TIME_RECS_PER_DAY = 8
 NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended_v2/ec2_arome_blended_ensemble_%Y%m%d.nc'
