@@ -103,37 +103,12 @@ def get_ec2_var_accumulated(ec_ds, ec_var_name, in_ec2_time_range):
     ec2_var : np.ndarray(float)
     '''
     print('deaccumulating...')
-    nt_tot = ec_ds.variables[ec_var_name].shape[0] 
-    inds = np.arange(nt_tot, dtype=int)[in_ec2_time_range]
-    
-    i0 = inds[0]-1
-    j0 = 1
-    if i0<0:
-        i0 = 0
-        j0 = 0
-
-    i1 = inds[-1] + 1
-    j1 = -1
-    if i1>nt_tot-1:
-        i1 = None
-        j1 = None
-    else:
-        i1 += 1
-    s1 = slice(i0, i1, None)
-    s2 = slice(j0, j1, None)
-    
-    v = ec_ds.variables[ec_var_name][s1,::-1,:]
-    nlat, nlon = v.shape[1:]
-
-    # now deaccumulate
-    v2 = np.gradient(v, axis=0)[s2,:,:]
-    
-    #convert from 3h resolution to 6h
-    v3 = np.zeros((TIME_RECS_PER_DAY, nlat, nlon))
-    for n in range(TIME_RECS_PER_DAY):
-        i0 = 2*n
-        v3[n] = v2[2*n] + v2[2*n+1]
-    return v3
+    v = ec_ds.variables[ec_var_name][
+            in_ec2_time_range,::-1,:]
+    # now deaccumulate and convert from 3h resolution to 6h
+    # NB!! can't take central diff between different days as accumulation
+    # is restarted each day
+    return 2*np.gradient(v, axis=0)[::2,:,:]
 
 def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
     '''
@@ -155,7 +130,7 @@ def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
         return get_ec2_var_accumulated(ec_ds, ec_var_name, in_ec2_time_range)
     else:
         return ec_ds.variables[
-                ec_var_name][in_ec2_time_range,::-1,:][::2] #get 2nd rec
+                ec_var_name][in_ec2_time_range,::-1,:][::2] #flip lat and get every 2nd rec
 
 def test_ec2_time_range(ec_ds, date):
     '''
