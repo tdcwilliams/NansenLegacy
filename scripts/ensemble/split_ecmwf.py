@@ -28,7 +28,8 @@ AR_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/processed/aro_eps_%Y%m%d.nc
 AR_MARGIN = 20 # pixels
 
 EC_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/legacy_201803_3h.nc'
-EC_REFDATE = dt.datetime(1900, 1, 1)
+EC_REFDATE = dt.datetime(1900, 1, 1) #ref date in downloaded file
+DST_REFDATE = dt.datetime(1950, 1, 1) #ref date hard-coded into neXtSIM
 EC_ACC_VARS = ['ssrd', 'strd', 'tp', 'sf']
 
 TIME_RECS_PER_DAY = 4
@@ -166,8 +167,10 @@ def set_destination_coordinates(ec_ds, in_ec2_time_range):
     """
     # coordinates on destination grid
     # X,Y (NEXTSIM)
+    time = ec_ds.variables['time'][in_ec2_time_range][::2]
+    time_shift = (DST_REFDATE - EC_REFDATE).days*24.
     return {
-        'time': ec_ds.variables['time'][in_ec2_time_range][::2],
+        'time': time - time_shift,
         'lat': ec_ds.variables['latitude'][::-1],
         'lon': ec_ds.variables['longitude'][:],
     }
@@ -197,7 +200,11 @@ def export(outfile, ec_ds, dst_vec):
                     dim_name, 'f8', (dim_name,), **KW_COMPRESSION)
             ec_var = ec_ds.variables[DST_DIMS[dim_name]]
             for ncattr in ec_var.ncattrs():
-                dst_var.setncattr(ncattr, ec_var.getncattr(ncattr))
+                att = {
+                        'time': DST_REFDATE.strftime('hours since %Y-%m-%d 00:00:00.0')
+                        }.get(dim_name,
+                                ec_var.getncattr(ncattr)) #need to change ref time
+                dst_var.setncattr(ncattr, att)
             dst_var[:] = dim_vec
 
         # add processed variables
