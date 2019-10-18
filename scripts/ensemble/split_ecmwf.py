@@ -31,9 +31,20 @@ EC_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/legac
 EC_REFDATE = dt.datetime(1900, 1, 1) #ref date in downloaded file
 DST_REFDATE = dt.datetime(1950, 1, 1) #ref date hard-coded into neXtSIM
 EC_ACC_VARS = ['ssrd', 'strd', 'tp', 'sf']
+EC_RECS_PER_DAY = 8
 
-TIME_RECS_PER_DAY = 4
-NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/ec2_start%Y%m%d.nc'
+outdir = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic'
+if not os.path.exists(outdir):
+    os.mkdir(outdir)
+if 0:
+    #6h resolution
+    TIME_RECS_PER_DAY = 4
+    NEW_FILEMASK = os.path.join(outdir, '6h', 'ec2_start%Y%m%d.nc')
+else:
+    #3h resolution
+    TIME_RECS_PER_DAY = 8
+    NEW_FILEMASK = os.path.join(outdir, '3h', 'ec2_start%Y%m%d.nc')
+TIME_RES_RATIO = int(EC_RECS_PER_DAY/TIME_RECS_PER_DAY)
 
 # Destination variables
 DST_VARS = {
@@ -45,6 +56,7 @@ DST_VARS = {
     'STRD' : 'strd',
     'MSL': 'msl',
     'TP': 'tp',
+    'TCC': 'tcc',
     'SF': 'sf',
     }
 if 0:
@@ -86,31 +98,6 @@ def open_ecmwf():
     print('Opening ECMWF file %s\n' %ec_filename)
     return Dataset(ec_filename)
 
-def get_ec2_var_accumulated(ec_ds, ec_var_name, in_ec2_time_range):
-    '''
-    deaccumulate accumulated var's
-    need to flip lat, get every 2nd record
-
-    Parameters:
-    -----------
-    ec_ds : netCDF4.Dataset
-    vname : str
-        name of ec2 variable
-    in_ec2_time_range : np.ndarray(bool)
-        tells which time indices to use
-
-    Returns:
-    --------
-    ec2_var : np.ndarray(float)
-    '''
-    print('deaccumulating...')
-    v = ec_ds.variables[ec_var_name][
-            in_ec2_time_range,::-1,:]
-    # now deaccumulate and convert from 3h resolution to 6h
-    # NB!! can't take central diff between different days as accumulation
-    # is restarted each day
-    return 2*np.gradient(v, axis=0)[::2,:,:]
-
 def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
     '''
     need to flip lat, get every 2nd record
@@ -127,11 +114,16 @@ def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
     --------
     ec2_var : np.ndarray(float)
     '''
+    v = ec_ds.variables[
+                ec_var_name][in_ec2_time_range,::-1,:]
     if ec_var_name in EC_ACC_VARS:
-        return get_ec2_var_accumulated(ec_ds, ec_var_name, in_ec2_time_range)
-    else:
-        return ec_ds.variables[
-                ec_var_name][in_ec2_time_range,::-1,:][::2] #flip lat and get every 2nd rec
+        # in neXtSIM we want the rate,
+        # and convert accumulated variables to rates
+        # by dividing by the forcing resolution in seconds.
+        # Hence we need to double the rate if we lower the resolution.
+        v = TIME_RES_RATIO*np.gradient(v, axis=0)
+        v[v<0] = 0.
+    return v[::TIME_RES_RATIO] #flip lat and get every 2nd rec
 
 def test_ec2_time_range(ec_ds, date):
     '''
@@ -167,7 +159,7 @@ def set_destination_coordinates(ec_ds, in_ec2_time_range):
     """
     # coordinates on destination grid
     # X,Y (NEXTSIM)
-    time = ec_ds.variables['time'][in_ec2_time_range][::2]
+    time = ec_ds.variables['time'][in_ec2_time_range][::TIME_RES_RATIO]
     time_shift = (DST_REFDATE - EC_REFDATE).days*24.
     return {
         'time': time - time_shift,
@@ -195,16 +187,18 @@ def export(outfile, ec_ds, dst_vec):
         # add dimensions
         for dim_name, dim_vec in dst_vec.items():
             dlen = {'time': None}.get(dim_name, len(dim_vec)) #time should be unlimited
+            dtype = {'time': 'f8'}.get(dim_name, 'f4') #time should be double
             dst_dim = dst_ds.createDimension(dim_name, dlen)
             dst_var = dst_ds.createVariable(
-                    dim_name, 'f8', (dim_name,), **KW_COMPRESSION)
+                    dim_name, dtype, (dim_name,), **KW_COMPRESSION)
             ec_var = ec_ds.variables[DST_DIMS[dim_name]]
             for ncattr in ec_var.ncattrs():
-                att = {
-                        'time': DST_REFDATE.strftime('hours since %Y-%m-%d 00:00:00.0')
-                        }.get(dim_name,
-                                ec_var.getncattr(ncattr)) #need to change ref time
-                dst_var.setncattr(ncattr, att)
+                if [dim_name, ncattr] == ['time', 'units']:
+                    units = DST_REFDATE.strftime(
+                            'hours since %Y-%m-%d 00:00:00.0') #need to change ref time
+                    dst_var.setncattr(ncattr, units)
+                else:
+                    dst_var.setncattr(ncattr, ec_var.getncattr(ncattr))
             dst_var[:] = dim_vec
 
         # add processed variables
