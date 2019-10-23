@@ -41,7 +41,7 @@ DST_PI = ProjectionInfo()
 # extent overlaps with AROME grid
 DST_X_MIN = -300000
 DST_X_MAX =  2800000
-DST_Y_MIN = -2000000
+DST_Y_MIN = -2030000
 DST_Y_MAX =  1500000
 DST_X_RES, DST_Y_RES = 2500, 2500
 #DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
