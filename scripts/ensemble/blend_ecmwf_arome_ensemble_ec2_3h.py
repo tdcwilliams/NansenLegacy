@@ -33,18 +33,20 @@ EC_ACC_VARS = ['ssrd', 'strd', 'tp', 'sf'] #ec2 variables that need to be deaccu
 
 TIME_RECS_PER_DAY = 8
 NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended_v2/ec2_arome_blended_ensemble_%Y%m%d.nc'
+GRID_FILE = NEW_FILEMASK.replace('%Y%m%d', 'grid')
 
 # Destination grid
 # neXtSIM default projection
 DST_PI = ProjectionInfo()
+EXPORT4D = True
 
 # extent overlaps with AROME grid
 DST_X_MIN = -300000
 DST_X_MAX =  2800000
 DST_Y_MIN = -2030000
 DST_Y_MAX =  1500000
-DST_X_RES, DST_Y_RES = 2500, 2500
-#DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
+#DST_X_RES, DST_Y_RES = 2500, 2500
+DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
 
 # extent overlaps with FRAM strait
 #DST_X_MIN = -450000
@@ -64,6 +66,8 @@ def parse_args(args):
             help='input date (YYYYMMDD)')
     parser.add_argument('-p', '--plot', action='store_true',
             help='Generate plot of AROME and the new domains')
+    parser.add_argument('-g', '--save-grid', action='store_true',
+            help='save the grid file')
     return parser.parse_args(args)
 
 def precipitation_amount_acc(ec_TP):
@@ -386,53 +390,28 @@ def blend(ar_data, ec_data, distance):
     ar_data[ar_nan_pix] = 0
     return ar_data * ar_weight + ec_data * (1 - ar_weight)
 
-def export(outfile, ar_ds, dst_ecp, dst_vec, dst_shape):
-    """ Export blended product
-
-    Parameters
-    ----------
-    outfile : str
-        netcdf output filename
-    ar_ds : netCDF4.Dataset
-        source AROME dataset
-    dst_ecp : Nx3 ndarray
-        destination coordinates for ECMWF (time, lat, lon)
-    dst_vec : dict
-        three vectors with destination coordinates (time, ensemble_member, y, x)
-    dst_shape : tuple
-        shape of destination grid
-
-    """
-    # Create dataset for output
-    skip_var_attr = ['_FillValue', 'grid_mapping']
-    # create dataset
-    print('Exporting %s' %outfile)
-    dst_ds = Dataset(outfile, 'w')
-    # add dimensions
-    for dim_name, dim_vec in dst_vec.items():
-        dlen = {'time': None}.get(dim_name, len(dim_vec)) #time should be unlimited
-        dst_dim = dst_ds.createDimension(dim_name, dlen)
-        dst_var = dst_ds.createVariable(
-                dim_name, 'f8', (dim_name,), **KW_COMPRESSION)
-        dst_var[:] = dim_vec
-        ar_var = ar_ds.variables[dim_name]
-        for ncattr in ar_var.ncattrs():
-            dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
+def add_time_to_file(dst_ds, ar_ds):
+    dim_name = 'time'
+    dst_dim = dst_ds.createDimension(dim_name, None) #time should be unlimited
+    dst_var = dst_ds.createVariable(
+            dim_name, 'f8', (dim_name,), **KW_COMPRESSION)
+    ar_var = ar_ds.variables[dim_name]
+    for ncattr in ar_var.ncattrs():
+        dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
     # copy arome time for the day
     dst_ds.variables['time'][:] = ar_ds.variables['time'][:TIME_RECS_PER_DAY]
 
-    # add blended variables
-    for dst_var_name in DST_VARS:
-        dst_var = dst_ds.createVariable(dst_var_name, 'f4',
-                ('time', 'ensemble_member', 'y', 'x',),
-                **KW_COMPRESSION)
-        dst_var[:] = DST_DATA[dst_var_name]
-        ar_var = ar_ds.variables[dst_var_name]
+def add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape):
+    # add x,y dimensions
+    dtypes = dict(x='f8', y='f8', ensemble_member='i4')
+    for dim_name, dim_vec in dst_vec.items():
+        dst_dim = dst_ds.createDimension(dim_name, len(dim_vec))
+        dst_var = dst_ds.createVariable(
+                dim_name, dtypes[dim_name], (dim_name,), **KW_COMPRESSION)
+        ar_var = ar_ds.variables[dim_name]
         for ncattr in ar_var.ncattrs():
-            if ncattr in skip_var_attr:
-                continue
             dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
-        dst_var.setncattr('grid_mapping', 'projection_stereo')
+        dst_var[:] = dim_vec
 
     # add projection variable
     projection_stereo = dict(
@@ -448,17 +427,107 @@ def export(outfile, ar_ds, dst_ecp, dst_vec, dst_shape):
     dst_var.setncatts(projection_stereo)
 
     # add lon/lat
-    dst_lon_grd = dst_ecp[:, 2].reshape(dst_shape)[0]
-    dst_lat_grd = dst_ecp[:, 1].reshape(dst_shape)[0]
     for var_name in ['longitude', 'latitude']:
         dst_var = dst_ds.createVariable(
                 var_name, 'f8', ('y', 'x',), **KW_COMPRESSION)
         ar_var = ar_ds.variables[var_name]
         for ncattr in ar_var.ncattrs():
             dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
-        dst_var[:] = {'longitude': dst_lon_grd, 'latitude': dst_lat_grd}[var_name]
+        dst_var[:] = {
+                'longitude': dst_ecp[:, 2].reshape(dst_shape)[0],
+                'latitude' : dst_ecp[:, 1].reshape(dst_shape)[0],
+                }[var_name]
 
-    dst_ds.close()
+def export3d(outfile0, ar_ds, dst_ecp, dst_vec0, dst_shape):
+    """ Export blended product - one file for each ensemble member
+
+    Parameters
+    ----------
+    outfile : str
+        netcdf output filename
+    ar_ds : netCDF4.Dataset
+        source AROME dataset
+    dst_ecp : Nx3 ndarray
+        destination coordinates for ECMWF (time, lat, lon)
+    dst_vec : dict
+        three vectors with destination coordinates (time, y, x)
+    dst_shape : tuple
+        shape of destination grid
+
+    """
+    # Create dataset for output
+    skip_var_attr = []#['_FillValue', 'grid_mapping']
+    num_ens_mems = len(dst_vec0["ensemble_member"])
+    dst_vec = dict(**dst_vec0)
+    del(dst_vec["ensemble_member"])
+    del(dst_vec["time"])
+    for i_ens in range(num_ens_mems):
+        outfile = outfile0.replace('.nc', '.mem%.3i.nc' %(i_ens+1))
+        print('Exporting %s' %outfile)
+        if os.path.exists(outfile):
+            continue
+        # create dataset
+        with Dataset(outfile, 'w') as dst_ds:
+
+            # add dimensions, lon/lat, stereo
+            add_time_to_file(dst_ds, ar_ds)
+            add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape)
+
+            # add blended variables
+            for dst_var_name in DST_VARS:
+                dst_var = dst_ds.createVariable(dst_var_name, 'f4',
+                        ('time', 'y', 'x',),
+                        **KW_COMPRESSION)
+                ar_var = ar_ds.variables[dst_var_name]
+                for ncattr in ar_var.ncattrs():
+                    if ncattr in skip_var_attr:
+                        continue
+                    dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
+                dst_var.setncattr('grid_mapping', 'projection_stereo')
+                dst_var[:] = DST_DATA[dst_var_name][:,i_ens,:,:]
+
+def export4d(outfile, ar_ds, dst_ecp, dst_vec0, dst_shape):
+    """ Export blended product - single file with ensemble_member dimension
+
+    Parameters
+    ----------
+    outfile : str
+        netcdf output filename
+    ar_ds : netCDF4.Dataset
+        source AROME dataset
+    dst_ecp : Nx3 ndarray
+        destination coordinates for ECMWF (time, lat, lon)
+    dst_vec : dict
+        three vectors with destination coordinates (time, ensemble_member, y, x)
+    dst_shape : tuple
+        shape of destination grid
+
+    """
+    if os.path.exists(outfile):
+        return
+    # Create dataset for output
+    skip_var_attr = []#['_FillValue', 'grid_mapping']
+    # create dataset
+    print('Exporting %s' %outfile)
+    dst_vec = dict(**dst_vec0)
+    del(dst_vec["time"])
+    with Dataset(outfile, 'w') as dst_ds:
+        add_time_to_file(dst_ds, ar_ds)
+        add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape)
+
+        # add blended variables
+        for dst_var_name in DST_VARS:
+            dst_var = dst_ds.createVariable(dst_var_name, 'f4',
+                    ('time', 'ensemble_member', 'y', 'x',),
+                    **KW_COMPRESSION)
+            ar_var = ar_ds.variables[dst_var_name]
+            for ncattr in ar_var.ncattrs():
+                if ncattr in skip_var_attr:
+                    continue
+                dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
+            dst_var.setncattr('grid_mapping', 'projection_stereo')
+            dst_var[:] = DST_DATA[dst_var_name]
+
 
 # Destination variables
 DST_VARS = {
@@ -532,6 +601,12 @@ def run(args):
     (dst_vec, dst_ecp, dst_arp,
             dst_shape) = set_destination_coordinates(ar_proj, ar_ds)
 
+    if args.save_grid:
+        # save the grid
+        print('Exporting %s' %GRID_FILE)
+        with Dataset(GRID_FILE, 'w') as dst_ds:
+            add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape)
+
     dst_ardist_grd = None
     ar_shp = [len(v) for v in ar_pts]
 
@@ -600,8 +675,11 @@ def run(args):
             DST_DATA[dst_var_name][:, i_ens, :, :] = blend(
                     dst_ard_grd, dst_ecd_grd, dst_ardist_grd)
 
-    # save the output
-    export(outfile, ar_ds, dst_ecp, dst_vec, dst_shape)
+    #export the files
+    if EXPORT4D:
+        export4d(outfile, ar_ds, dst_ecp, dst_vec, dst_shape)
+    else:
+        export3d(outfile, ar_ds, dst_ecp, dst_vec, dst_shape)
 
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
