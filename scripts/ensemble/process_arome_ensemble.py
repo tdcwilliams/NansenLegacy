@@ -22,6 +22,7 @@ VALID_DATE = lambda x : dt.datetime.strptime(x, '%Y%m%d')
 
 AR_FILEMASK_RAW = '/Data/sim/data/AROME_barents_ensemble/raw/aro_eps_%Y%m%d00.nc'
 AR_FILEMASK_NEW = '/Data/sim/data/AROME_barents_ensemble/processed/aro_eps_%Y%m%d.nc'
+NDAYS=2
 AR_TIME_RECS_PER_DAY = 8
 KW_COMPRESSION = dict(zlib=True)
 
@@ -85,7 +86,7 @@ def open_arome(date):
     ar_proj = pyproj.Proj(ar_ds.variables['projection_lambert'].proj4)
     ar_x_vec = ar_ds.variables['x'][:].data
     ar_y_vec = ar_ds.variables['y'][:].data
-    ar_t_vec = np.linspace(0, 24, AR_TIME_RECS_PER_DAY+1)[:-1]
+    ar_t_vec = np.linspace(0, 24*NDAYS, NDAYS*AR_TIME_RECS_PER_DAY)
     return ar_ds, ar_ds2, ar_proj, (ar_t_vec, ar_y_vec, ar_x_vec)
 
 def set_destination_coordinates(ar_proj, ar_ds, ar_ds2):
@@ -108,9 +109,10 @@ def set_destination_coordinates(ar_proj, ar_ds, ar_ds2):
         shape of destination grid
     """
 
-    time = np.zeros((AR_TIME_RECS_PER_DAY,))
+    time = np.zeros((NDAYS*AR_TIME_RECS_PER_DAY+1,))
+    # grab 1st record from previous day's file
     time[0] = ar_ds2.variables['time'][AR_TIME_RECS_PER_DAY-1]
-    time[1:] = ar_ds.variables['time'][:AR_TIME_RECS_PER_DAY-1]
+    time[1:] = ar_ds.variables['time'][:]
 
     # coordinates on destination grid
     # X,Y (NEXTSIM)
@@ -144,11 +146,13 @@ def get_ar_inst_var(ar_ds, ar_ds2, dst_var_name, shp):
     array : numpy.ndarray
     '''
     array = np.zeros(shp)
-    # get 03:00, 06:00, ..., 21:00 for current day
+    ntime = shp[0]
+    # get 03:00, 06:00, ..., 24:00 for current day
+    # get 03:00, 06:00, ..., 24:00 for next day
     # from current day's file
-    array[1:AR_TIME_RECS_PER_DAY+1,:,:,:] = ar_ds.variables[
-                dst_var_name][:AR_TIME_RECS_PER_DAY-1,0,:,:,:]
-    # 00:00 of current day from previous day's file
+    # NB remove the z dimension
+    array[1:,:,:,:] = ar_ds.variables[dst_var_name][:,0,:,:,:]
+    # HACK: 00:00 of current day from previous day's file
     array[0,:,:,:] = ar_ds2.variables[
             dst_var_name][AR_TIME_RECS_PER_DAY-1:AR_TIME_RECS_PER_DAY,0,:,:,:]
     return array
@@ -174,20 +178,18 @@ def get_ar_accum_var(ar_ds, ar_ds2, dst_var_name, shp):
     array : numpy.ndarray
     '''
     array = np.zeros(shp)
-    nt, ne, nlat, nlon = shp
-    tmp = np.zeros([nt+1, ne, nlat, nlon])
+    tmp = np.zeros(shp)
     # Get 03:00, 06:00, ..., 21:00 for current day
     # from current day's file
     # - read 3:00 - 24:00 and take gradient
     # - value at 00:00 is 0
     tmp[1:,:,:,:] = ar_ds.variables[
-            dst_var_name][:AR_TIME_RECS_PER_DAY,0,:,:,:]
-    array[1:AR_TIME_RECS_PER_DAY+1,:,:,:] = np.gradient(
-            tmp, axis=0)[1:-1,:,:,:]
+            dst_var_name][:,0,:,:,:]
+    array[1:,:,:,:] = np.gradient(tmp, axis=0)[1:,:,:,:]
     # 00:00 of current day from previous day's file
     # - get 21:00, 24:00, 27:00 and take gradient
-    tmp = ar_ds2.variables[
-            dst_var_name][AR_TIME_RECS_PER_DAY-2:AR_TIME_RECS_PER_DAY+1,0,:,:,:]
+    tmp = ar_ds2.variables[dst_var_name][
+            AR_TIME_RECS_PER_DAY-2:AR_TIME_RECS_PER_DAY+1,0,:,:,:]
     array[0,:,:,:] = np.gradient(tmp, axis=0)[1,:,:,:]
     return array
 

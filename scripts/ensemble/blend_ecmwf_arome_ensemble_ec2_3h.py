@@ -27,12 +27,16 @@ _KELVIN = 273.15 # [C]
 AR_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/processed/aro_eps_%Y%m%d.nc'
 AR_MARGIN = 20 # pixels
 
-EC_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/legacy_201803_3h.nc'
-EC_REFDATE = dt.datetime(1900, 1, 1)
-EC_ACC_VARS = ['ssrd', 'strd', 'tp', 'sf'] #ec2 variables that need to be deaccumulated
+EC_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/3h/ec2_start%Y%m%d.nc'
+EC_REFDATE = dt.datetime(1950, 1, 1)
+#EC_ACC_VARS = ['ssrd', 'strd', 'tp', 'sf'] #ec2 variables that need to be deaccumulated
+EC_ACC_VARS = [] #ec2 variables are now already deaccumulated
 
+NDAYS=2
+AR_REFDATE = dt.datetime(1970, 1, 1)
 TIME_RECS_PER_DAY = 8
-NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended_v2/ec2_arome_blended_ensemble_%Y%m%d.nc'
+TIME_VEC = np.linspace(0, NDAYS*24, NDAYS*TIME_RECS_PER_DAY+1)
+NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended_v3/ec2_arome_blended_ensemble_%Y%m%d.nc'
 GRID_FILE = NEW_FILEMASK.replace('%Y%m%d', 'grid')
 
 # Destination grid
@@ -178,11 +182,15 @@ def open_arome(date):
     ar_proj = pyproj.Proj(ar_ds.variables['projection_lambert'].proj4)
     ar_x_vec = ar_ds.variables['x'][:].data
     ar_y_vec = ar_ds.variables['y'][:].data
-    ar_t_vec = np.linspace(0, 24, TIME_RECS_PER_DAY+1)[:-1]
-    return ar_ds, ar_proj, (ar_t_vec, ar_y_vec, ar_x_vec)
+    return ar_ds, ar_proj, (np.copy(TIME_VEC), ar_y_vec, ar_x_vec)
 
-def open_ecmwf():
+def open_ecmwf(date):
     """ Read ECMWF geolocation
+
+    Parameters
+    ----------
+    date : datetime.datetime
+        date of AROME file
 
     Returns
     -------
@@ -191,16 +199,15 @@ def open_ecmwf():
     ec_pts : tuple with three 1D-ndarrays
         ECMWF time, latitude, longitude coordinates
     """
-    ec_filename = EC_FILEMASK
+    ec_filename = date.strftime(EC_FILEMASK)
     print('Opening ECMWF file %s\n' %ec_filename)
     ec_ds = Dataset(ec_filename)
     # make lon cyclic
     ec_lon_vec = np.array(
-            list(ec_ds.variables['longitude'][:]) + [180])
+            list(ec_ds.variables['lon'][:]) + [180])
     # flip lat
-    ec_lat_vec = ec_ds.variables['latitude'][::-1]
-    ec_time_vec = np.linspace(0, 24, TIME_RECS_PER_DAY+1)[:-1]
-    return ec_ds, (ec_time_vec, ec_lat_vec, ec_lon_vec)
+    ec_lat_vec = ec_ds.variables['lat'][:]
+    return ec_ds, (np.copy(TIME_VEC), ec_lat_vec, ec_lon_vec)
 
 def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
     '''
@@ -219,7 +226,7 @@ def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
     ec2_var : np.ndarray(float)
     '''
     v = ec_ds.variables[
-            ec_var_name][in_ec2_time_range,::-1,:]
+            ec_var_name][in_ec2_time_range,:,:]
     nt, nlat, nlon = v.shape
     v2 = np.zeros((nt, nlat, nlon+1))
     v2[:,:,:-1] = v
@@ -245,7 +252,7 @@ def test_ec2_time_range(ec_ds, date):
     ec_time = np.array([
         EC_REFDATE + dt.timedelta(hours=h)
         for h in ec_time_raw])
-    in_range = (ec_time >= date)*(ec_time < date + dt.timedelta(1))
+    in_range = (ec_time >= date)*(ec_time <= date + dt.timedelta(NDAYS))
     return in_range
 
 def set_destination_coordinates(ar_proj, ar_ds):
@@ -272,7 +279,7 @@ def set_destination_coordinates(ar_proj, ar_ds):
     dst_vec = {
         'x': np.arange(DST_X_MIN, DST_X_MAX, DST_X_RES),
         'y': np.arange(DST_Y_MAX, DST_Y_MIN, -DST_Y_RES),
-        'time': np.linspace(0, 24, TIME_RECS_PER_DAY+1)[:-1],
+        'time': np.copy(TIME_VEC),
         'ensemble_member': np.arange(ar_ds.variables['ensemble_member'].size),
     }
 
@@ -345,7 +352,7 @@ def create_distance(ar_shp):
     Parameters
     ----------
     ar_shp : list
-        shape of AROME variables
+        shape of AROME variables (without ensemble dimension)
 
     Returns
     -------
@@ -362,7 +369,7 @@ def create_distance(ar_shp):
     # calculate distance from the border (from False pixels)
     dist2d = distance_transform_edt(mask, return_distances=True, return_indices=False)
     # convert 2D into 3D
-    return np.array([dist2d]*TIME_RECS_PER_DAY)
+    return np.array([dist2d]*len(TIME_VEC))
 
 def blend(ar_data, ec_data, distance):
     """ Blend 2 3D matrices with AROME and ECMWF products into one using weighted average.
@@ -398,8 +405,8 @@ def add_time_to_file(dst_ds, ar_ds):
     ar_var = ar_ds.variables[dim_name]
     for ncattr in ar_var.ncattrs():
         dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
-    # copy arome time for the day
-    dst_ds.variables['time'][:] = ar_ds.variables['time'][:TIME_RECS_PER_DAY]
+    # copy arome time
+    dst_ds.variables['time'][:] = ar_ds.variables['time'][:]
 
 def add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape):
     # add x,y dimensions
@@ -465,6 +472,7 @@ def export3d(outfile0, ar_ds, dst_ecp, dst_vec0, dst_shape):
         outfile = outfile0.replace('.nc', '.mem%.3i.nc' %(i_ens+1))
         print('Exporting %s' %outfile)
         if os.path.exists(outfile):
+            print('%s exists - skipping' %outfile)
             continue
         # create dataset
         with Dataset(outfile, 'w') as dst_ds:
@@ -504,6 +512,7 @@ def export4d(outfile, ar_ds, dst_ecp, dst_vec0, dst_shape):
 
     """
     if os.path.exists(outfile):
+        print('%s exists - skipping' %outfile)
         return
     # Create dataset for output
     skip_var_attr = []#['_FillValue', 'grid_mapping']
@@ -532,46 +541,46 @@ def export4d(outfile, ar_ds, dst_ecp, dst_vec0, dst_shape):
 # Destination variables
 DST_VARS = {
     'x_wind_10m' : {
-        'ec_vars': ['u10'],
+        'ec_vars': ['10U'],
         'ec_func': lambda x: x,
         },
     'y_wind_10m' : {
-        'ec_vars': ['v10'],
+        'ec_vars': ['10V'],
         'ec_func': lambda x: x,
         },
     'air_temperature_2m': {
-        'ec_vars': ['t2m'],
+        'ec_vars': ['2T'],
         'ec_func': lambda x: x,
         },
     'specific_humidity_2m': {
-        'ec_vars': ['d2m', 'msl'],
+        'ec_vars': ['2D', 'MSL'],
         'ec_func': specific_humidity_2m,
         },
     'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time': {
-        'ec_vars': ['ssrd'],
+        'ec_vars': ['SSRD'],
         'ec_func': lambda x: x,
         },
     'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time' : {
-        'ec_vars': ['strd'],
+        'ec_vars': ['STRD'],
         'ec_func': lambda x: x,
         },
     'air_pressure_at_sea_level': {
-        'ec_vars': ['msl'],
+        'ec_vars': ['MSL'],
         'ec_func': lambda x: x,
         },
     'precipitation_amount_acc': {
-        'ec_vars': ['tp'],
+        'ec_vars': ['TP'],
         'ec_func': precipitation_amount_acc,
         },
     'integral_of_snowfall_amount_wrt_time' : {
-        'ec_vars': ['t2m', 'tp'],
+        'ec_vars': ['2T', 'TP'],
         'ec_func': integral_of_snowfall_amount_wrt_time,
         },
     }
 if 0:
     # test on smaller subset of variables
-    #dst_var = 'air_temperature_2m'
-    dst_var = 'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time'
+    dst_var = 'air_temperature_2m'
+    #dst_var = 'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time'
     #dst_var = 'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time'
     DST_VARS = {dst_var: DST_VARS[dst_var]}
 
@@ -589,7 +598,7 @@ def run(args):
 
     # open arome file and ecmwf file
     ar_ds, ar_proj, ar_pts = open_arome(args.date)
-    ec_ds, ec_pts = open_ecmwf()
+    ec_ds, ec_pts = open_ecmwf(args.date)
     in_ec2_time_range = test_ec2_time_range(ec_ds, args.date)
 
     if args.plot:
@@ -601,11 +610,11 @@ def run(args):
     (dst_vec, dst_ecp, dst_arp,
             dst_shape) = set_destination_coordinates(ar_proj, ar_ds)
 
-    if args.save_grid:
-        # save the grid
-        print('Exporting %s' %GRID_FILE)
-        with Dataset(GRID_FILE, 'w') as dst_ds:
-            add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape)
+    #if args.save_grid:
+    #    # save the grid
+    #    print('Exporting %s' %GRID_FILE)
+    #    with Dataset(GRID_FILE, 'w') as dst_ds:
+    #        add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape)
 
     dst_ardist_grd = None
     ar_shp = [len(v) for v in ar_pts]
@@ -619,8 +628,7 @@ def run(args):
         for i_ens in range(num_ens_mems):
             print('- AROME ensemble member: %i' %i_ens)
             ar_var = np.zeros(ar_shp) #convert to 3d array
-            ar_var[:] = ar_ds[dst_var_name][:TIME_RECS_PER_DAY, i_ens, :, :]
-
+            ar_var[:] = ar_ds[dst_var_name][:, i_ens, :, :]
             dst_ard_grd_all_members.append(
                     interpolate(ar_var, ar_pts, dst_arp, dst_shape))
 
