@@ -70,8 +70,8 @@ def parse_args(args):
             help='input date (YYYYMMDD)')
     parser.add_argument('-p', '--plot', action='store_true',
             help='Generate plot of AROME and the new domains')
-    parser.add_argument('-g', '--save-grid', action='store_true',
-            help='save the grid file')
+    #parser.add_argument('-g', '--save-grid', action='store_true',
+    #        help='save the grid file')
     return parser.parse_args(args)
 
 def precipitation_amount_acc(ec_TP):
