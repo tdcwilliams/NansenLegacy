@@ -49,8 +49,8 @@ DST_X_MIN = -300000
 DST_X_MAX =  2800000
 DST_Y_MIN = -2030000
 DST_Y_MAX =  1500000
-DST_X_RES, DST_Y_RES = 2500, 2500
-#DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
+#DST_X_RES, DST_Y_RES = 2500, 2500
+DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
 
 # extent overlaps with FRAM strait
 #DST_X_MIN = -450000
@@ -577,7 +577,7 @@ DST_VARS = {
         'ec_func': integral_of_snowfall_amount_wrt_time,
         },
     }
-if 0:
+if 1:
     # test on smaller subset of variables
     dst_var = 'air_temperature_2m'
     #dst_var = 'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time'
