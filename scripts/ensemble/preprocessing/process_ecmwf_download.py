@@ -29,24 +29,20 @@ DST_DATA = {}
 _KELVIN = 273.15 # [C]
 
 # filenames
-EC_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/legacy_201803_3h.%i.nc'
+EC_FILEMASK = 'legacy_201803_3h.%i.nc'
 EC_REFDATE = dt.datetime(1900, 1, 1) #ref date in downloaded file
 DST_REFDATE = dt.datetime(1950, 1, 1) #ref date hard-coded into neXtSIM
 EC_ACC_VARS = ['ssrd', 'strd', 'tp', 'sf']
 EC_RECS_PER_DAY = 8 #number of recs per day in downloaded file
 NDAYS = 3
 
-outdir = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/3h'
-if not os.path.exists(outdir):
-    os.mkdir(outdir)
 if 0:
     #6h resolution
     TIME_RECS_PER_DAY = 4 #number of recs per day in output file
-    NEW_FILEMASK = os.path.join(outdir, '6h', 'ec2_start%Y%m%d.nc')
 else:
     #3h resolution
     TIME_RECS_PER_DAY = 8 #number of recs per day in output file
-    NEW_FILEMASK = os.path.join(outdir, '3h', 'ec2_start%Y%m%d.nc')
+NEW_FILEMASK = 'ec2_start%Y%m%d.nc'
 TIME_RES_RATIO = int(EC_RECS_PER_DAY/TIME_RECS_PER_DAY)
 
 # Destination variables
@@ -85,9 +81,13 @@ def parse_args(args):
             and deaccumulate the required variables""")
     parser.add_argument('date', type=VALID_DATE,
             help='input date (YYYYMMDD)')
+    parser.add_argument('indir', type=str,
+            help='folder where the raw files were downloaded to')
+    parser.add_argument('outdir', type=str,
+            help='folder where the processed files should be saved to')
     return parser.parse_args(args)
 
-def open_ecmwf():
+def open_ecmwf(args):
     """ open downloaded ECMWF file
 
     Returns
@@ -97,8 +97,8 @@ def open_ecmwf():
     ec_pts : tuple with three 1D-ndarrays
         ECMWF time, latitude, longitude coordinates
     """
-    ec_filename = EC_FILEMASK
-    return {i-1: Dataset(EC_FILEMASK %i) for i in range(1,NDAYS+1)}
+    ec_filemask = os.path.join(args.indir, EC_FILEMASK)
+    return {i-1: Dataset(ec_filemask %i) for i in range(1, NDAYS+1)}
 
 def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
     '''
@@ -247,12 +247,11 @@ def run(args):
     -----------
     args : argparse.Namespace
     '''
-    outdir = os.path.split(NEW_FILEMASK)[0]
-    nsl.make_dir(outdir)
-    outfile = os.path.join(outdir, args.date.strftime(NEW_FILEMASK))
+    nsl.make_dir(args.outdir)
+    outfile = os.path.join(args.outdir, args.date.strftime(NEW_FILEMASK))
 
     # open arome file and ecmwf file for each day of forecast
-    ec_dsets = open_ecmwf()
+    ec_dsets = open_ecmwf(args)
     dst_data = {v: [] for v in DST_VARS}
     dst_vecs = []
     for i, ec_ds in ec_dsets.items():
