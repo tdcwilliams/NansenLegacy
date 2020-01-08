@@ -1,6 +1,6 @@
 #! /bin/bash
 
-for d in `seq -w 9 31`
+for d in `seq -w 3 31`
 do
     dt=201803$d
     cmd="./split_ecmwf.py $dt"

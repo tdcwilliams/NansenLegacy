@@ -1,4 +1,10 @@
 #!/usr/bin/env python
+'''
+downloaded files are for March 2018
+- legacy_201803_3h.nc has 1st day of forecast for each start date
+- legacy_201803_3h.[2,3,4].nc has 2nd/3rd/4th day of forecast
+'''
+
 import os
 import sys
 import argparse
@@ -17,32 +23,29 @@ from pynextsim.projection_info import ProjectionInfo
 import pynextsim.lib as nsl
 
 # containers for interpolated data
-EC_DATA = {}
 DST_DATA = {}
 
 # Celsius to Kelvin conversion
 _KELVIN = 273.15 # [C]
 
 # filenames
-AR_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/processed/aro_eps_%Y%m%d.nc'
-AR_MARGIN = 20 # pixels
-
-EC_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/legacy_201803_3h.nc'
+EC_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/legacy_201803_3h.%i.nc'
 EC_REFDATE = dt.datetime(1900, 1, 1) #ref date in downloaded file
 DST_REFDATE = dt.datetime(1950, 1, 1) #ref date hard-coded into neXtSIM
 EC_ACC_VARS = ['ssrd', 'strd', 'tp', 'sf']
-EC_RECS_PER_DAY = 8
+EC_RECS_PER_DAY = 8 #number of recs per day in downloaded file
+NDAYS = 3
 
-outdir = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic'
+outdir = '/Data/sim/data/AROME_barents_ensemble/ECMWF_forecast_arctic/3h'
 if not os.path.exists(outdir):
     os.mkdir(outdir)
 if 0:
     #6h resolution
-    TIME_RECS_PER_DAY = 4
+    TIME_RECS_PER_DAY = 4 #number of recs per day in output file
     NEW_FILEMASK = os.path.join(outdir, '6h', 'ec2_start%Y%m%d.nc')
 else:
     #3h resolution
-    TIME_RECS_PER_DAY = 8
+    TIME_RECS_PER_DAY = 8 #number of recs per day in output file
     NEW_FILEMASK = os.path.join(outdir, '3h', 'ec2_start%Y%m%d.nc')
 TIME_RES_RATIO = int(EC_RECS_PER_DAY/TIME_RECS_PER_DAY)
 
@@ -95,8 +98,7 @@ def open_ecmwf():
         ECMWF time, latitude, longitude coordinates
     """
     ec_filename = EC_FILEMASK
-    print('Opening ECMWF file %s\n' %ec_filename)
-    return Dataset(ec_filename)
+    return {i-1: Dataset(EC_FILEMASK %i) for i in range(1,NDAYS+1)}
 
 def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
     '''
@@ -115,14 +117,7 @@ def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
     ec2_var : np.ndarray(float)
     '''
     v = ec_ds.variables[
-                ec_var_name][in_ec2_time_range,::-1,:]
-    if ec_var_name in EC_ACC_VARS:
-        # in neXtSIM we want the rate,
-        # and convert accumulated variables to rates
-        # by dividing by the forcing resolution in seconds.
-        # Hence we need to double the rate if we lower the resolution.
-        v = TIME_RES_RATIO*np.gradient(v, axis=0)
-        v[v<0] = 0.
+                ec_var_name][in_ec2_time_range,::-1,:]#flip lat
     return v[::TIME_RES_RATIO] #flip lat and get every 2nd rec
 
 def test_ec2_time_range(ec_ds, date):
@@ -155,7 +150,7 @@ def set_destination_coordinates(ec_ds, in_ec2_time_range):
     Returns
     -------
     dst_vec : dict
-        three vectors with destination coordinates, time, lat, lon
+        three vectors with destination coordinates: time, lat, lon
     """
     # coordinates on destination grid
     # X,Y (NEXTSIM)
@@ -212,6 +207,37 @@ def export(outfile, ec_ds, dst_vec):
                     continue
                 dst_var.setncattr(ncattr, ec_var.getncattr(ncattr))
             dst_var[:] = DST_DATA[dst_var_name]
+def deaccumulate(arr):
+    # in neXtSIM we want the rate,
+    # and convert accumulated variables to rates
+    # by dividing by the forcing resolution in seconds.
+    # Hence we need to double the rate if we lower the resolution.
+    v = np.gradient(arr, axis=0)
+    v[v<0] = 0.
+    return v
+
+def merge_days(dst_data, dst_vecs):
+    lat = dst_vecs[0]['lat']
+    lon = dst_vecs[0]['lon']
+    time = []
+    for i in range(NDAYS):
+        time += list(dst_vecs[i]['time'])
+    dst_vec = dict(time=np.array(time), lat=lat, lon=lon)
+    shp = (len(time), len(lat), len(lon))
+    for v in DST_VARS:
+        DST_DATA[v] = np.zeros(shp)
+        for i, arr in enumerate(dst_data[v]):
+            itime = np.array(
+                    range(i*EC_RECS_PER_DAY, (i+1)*EC_RECS_PER_DAY)
+                    )
+            DST_DATA[v][itime,:,:] = arr
+
+        # deaccumulate once we have all the time records to get a better
+        # estimate for the accumulation rate
+        if DST_VARS[v] in EC_ACC_VARS:
+            print('deaccumulate %s' %v)
+            DST_DATA[v] = deaccumulate(DST_DATA[v])
+    return dst_vec
 
 def run(args):
     '''
@@ -225,39 +251,33 @@ def run(args):
     nsl.make_dir(outdir)
     outfile = os.path.join(outdir, args.date.strftime(NEW_FILEMASK))
 
-    # open arome file and ecmwf file
-    ec_ds = open_ecmwf()
-    in_ec2_time_range = test_ec2_time_range(ec_ds, args.date)
-    dst_vec = set_destination_coordinates(ec_ds, in_ec2_time_range)
+    # open arome file and ecmwf file for each day of forecast
+    ec_dsets = open_ecmwf()
+    dst_data = {v: [] for v in DST_VARS}
+    dst_vecs = []
+    for i, ec_ds in ec_dsets.items():
+        '''
+        loop over each day of forecast:
+        - eg 1st day of forecast is in legacy*.1.nc,
+             2nd day of forecast is in legacy*.2.nc
+        '''
+        print('Day %i: Using file %s' %(i,ec_ds.filepath()))
+        in_ec2_time_range = test_ec2_time_range(ec_ds, args.date + dt.timedelta(i))
+        dst_vecs.append(
+                set_destination_coordinates(ec_ds, in_ec2_time_range)
+                )
 
-    # fetch, interpolate and blend all variables from ECMWF and AROME
-    for dst_var_name in DST_VARS:
-        # Interpolate data from ECMWF
-        ec_var_name = DST_VARS[dst_var_name]
-        print('Read', ec_var_name)
-        DST_DATA[dst_var_name] = get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range)
-        if 0:
-            # test plots
-            kw = dict(vmin=0, vmax=3e6)
-            for n in range(8): 
-                nsl.make_dir('figs0')
-                figname = 'figs0/ec_%s_%i.png' %(dst_var_name, n)
-                print('Saving %s' %figname)
-                plt.imshow(dst_ecd_grd[n,:,:],
-                        origin='upper', **kw)
-                plt.colorbar()
-                plt.title(dst_var_name)
-                plt.savefig(figname)
-                plt.close() 
+        # fetch, interpolate and blend all variables from ECMWF and AROME
+        for dst_var_name in DST_VARS:
+            # Interpolate data from ECMWF
+            ec_var_name = DST_VARS[dst_var_name]
+            print('Read', ec_var_name)
+            dst_data[dst_var_name].append(
+                    get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range)
+                    )
 
-                figname = 'figs0/ar_%s_%i.png' %(dst_var_name, n)
-                print('Saving %s' %figname)
-                plt.imshow(dst_ard_grd_all_members[0][n,:,:],
-                        origin='upper', **kw)
-                plt.colorbar()
-                plt.title(dst_var_name)
-                plt.savefig(figname)
-                plt.close() 
+    # set DST_DATA (combine days 1,2,... before exporting)
+    dst_vec = merge_days(dst_data, dst_vecs)
 
     # save the output
     export(outfile, ec_ds, dst_vec)
