@@ -97,7 +97,7 @@ class PlotInnovations(object):
         
     def run(self):
         plot_date = self.date1
-        gmo = None
+        gmo = None #want to reuse the GMSH mesh object
         while plot_date <= self.date2:
             gmo = self.plot_one_date(plot_date, gmsh_obj=gmo)
             plot_date += dt.timedelta(1)
