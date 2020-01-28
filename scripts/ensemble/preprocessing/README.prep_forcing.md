@@ -79,7 +79,7 @@ time = "2018-03-31", "2018-03-31 03", "2018-03-31 06", "2018-03-31 09",
     "2018-04-02", "2018-04-02 03" ;
 ```
 
-## 5B. For running free runs make a fake file ```ec2_arome_blended_ensemble_20180401.nc``` to stop neXtSIM crashing.
+## 5B. For running free runs make a fake file ```ec2_arome_blended_ensemble_20180401.nc``` to stop neXtSIM crashing at last time step.
 ```
 ./make_fake_files.py
 ```
