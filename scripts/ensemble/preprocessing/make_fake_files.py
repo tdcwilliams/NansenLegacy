@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+'''
+script to make fake files to stp nextsim crashing due to 'no file for previous/following day'
+'''
 import os
 import shutil
 from netCDF4 import Dataset
