@@ -1,10 +1,18 @@
 #!/usr/bin/env python
+'''
+script to make fake files to stp nextsim crashing due to 'no file for previous/following day'
+'''
 import os
 import shutil
 from netCDF4 import Dataset
 import numpy as np
+import pynextsim.lib as nsl
 
 ROOTDIR = '/cluster/projects/nn2993k/sim/data/AROME_barents_ensemble'
+DIR1 = os.path.join(ROOTDIR, 'blended')
+DIR2 = os.path.join(ROOTDIR, 'blended_with_fake_record', 'fake_files')
+nsl.make_dir(DIR2)
+
 DST_VARS = [
     'x_wind_10m',
     'y_wind_10m',
@@ -19,8 +27,8 @@ DST_VARS = [
 DAYS_IN_SEC = 24*60*60. # time units are seconds
 
 def fix_first_day():
-    f1 = os.path.join(ROOTDIR, 'ec2_arome_blended_ensemble_20180309.nc')
-    f2 = os.path.join(ROOTDIR, 'fake_files', 'ec2_arome_blended_ensemble_20180308.nc')
+    f1 = os.path.join(DIR1, 'ec2_arome_blended_ensemble_20180309.nc')
+    f2 = os.path.join(DIR2, 'ec2_arome_blended_ensemble_20180308.nc')
     print('Making %s' %f2)
     shutil.copy2(f1, f2)
 
@@ -34,8 +42,8 @@ def fix_first_day():
                 ds.variables[v][i,:,:,:] = ds.variables[v][0,:,:,:]
 
 def fix_last_day():
-    f1 = os.path.join(ROOTDIR, 'ec2_arome_blended_ensemble_20180331.nc')
-    f2 = os.path.join(ROOTDIR, 'fake_files', 'ec2_arome_blended_ensemble_20180401.nc')
+    f1 = os.path.join(DIR1, 'ec2_arome_blended_ensemble_20180331.nc')
+    f2 = os.path.join(DIR2, 'ec2_arome_blended_ensemble_20180401.nc')
     print('Making %s' %f2)
     shutil.copy2(f1, f2)
 

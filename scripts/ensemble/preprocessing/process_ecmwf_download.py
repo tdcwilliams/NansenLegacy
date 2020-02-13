@@ -118,7 +118,7 @@ def get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range):
     '''
     v = ec_ds.variables[
                 ec_var_name][in_ec2_time_range,::-1,:]#flip lat
-    return v[::TIME_RES_RATIO] #flip lat and get every 2nd rec
+    return v[::TIME_RES_RATIO] #maybe get every 2nd rec
 
 def test_ec2_time_range(ec_ds, date):
     '''
@@ -207,6 +207,7 @@ def export(outfile, ec_ds, dst_vec):
                     continue
                 dst_var.setncattr(ncattr, ec_var.getncattr(ncattr))
             dst_var[:] = DST_DATA[dst_var_name]
+
 def deaccumulate(arr):
     # in neXtSIM we want the rate,
     # and convert accumulated variables to rates

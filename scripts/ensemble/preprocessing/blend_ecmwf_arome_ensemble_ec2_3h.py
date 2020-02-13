@@ -36,7 +36,7 @@ NDAYS=2
 AR_REFDATE = dt.datetime(1970, 1, 1)
 TIME_RECS_PER_DAY = 8
 TIME_VEC = np.linspace(0, NDAYS*24, NDAYS*TIME_RECS_PER_DAY+1)
-NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended_v3/ec2_arome_blended_ensemble_%Y%m%d.nc'
+NEW_FILEMASK = '/Data/sim/data/AROME_barents_ensemble/blended/ec2_arome_blended_ensemble_%Y%m%d.nc'
 GRID_FILE = NEW_FILEMASK.replace('%Y%m%d', 'grid')
 
 # Destination grid
@@ -49,8 +49,8 @@ DST_X_MIN = -300000
 DST_X_MAX =  2800000
 DST_Y_MIN = -2030000
 DST_Y_MAX =  1500000
-#DST_X_RES, DST_Y_RES = 2500, 2500
-DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
+DST_X_RES, DST_Y_RES = 2500, 2500
+#DST_X_RES, DST_Y_RES = 25000, 25000 #low res for testing
 
 # extent overlaps with FRAM strait
 #DST_X_MIN = -450000
@@ -70,8 +70,8 @@ def parse_args(args):
             help='input date (YYYYMMDD)')
     parser.add_argument('-p', '--plot', action='store_true',
             help='Generate plot of AROME and the new domains')
-    parser.add_argument('-g', '--save-grid', action='store_true',
-            help='save the grid file')
+    #parser.add_argument('-g', '--save-grid', action='store_true',
+    #        help='save the grid file')
     return parser.parse_args(args)
 
 def precipitation_amount_acc(ec_TP):
@@ -577,7 +577,7 @@ DST_VARS = {
         'ec_func': integral_of_snowfall_amount_wrt_time,
         },
     }
-if 1:
+if 0:
     # test on smaller subset of variables
     dst_var = 'air_temperature_2m'
     #dst_var = 'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time'
