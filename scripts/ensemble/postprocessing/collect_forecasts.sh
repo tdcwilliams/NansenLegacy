@@ -11,11 +11,7 @@ done
 
 echo "Copying forecasts to:"
 echo "$nird_dir"
-echo ""
-for i in `seq 1 175`
-do
-    lines+="-"
-done
+lines=`printf '=%.0s' {1..175}`
 
 for i in `seq 1 11`
 do
