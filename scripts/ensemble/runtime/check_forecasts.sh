@@ -1,3 +1,4 @@
+#! /bin/bash
 smos=""
 #smos="_smos"
 fcdir_prefix=$OUTPUT_FORECAST_DATA_DIR/arome_3km_ec2_arome_ensemble${smos}.fram
