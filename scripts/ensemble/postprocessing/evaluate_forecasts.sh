@@ -1,7 +1,4 @@
 #! /bin/bash
-function usage {
-    echo $0 FORECAST_NAME
-}
 function check_and_run_usage {
     echo check_and_run COMMAND OUTPUTDIR
 }
@@ -22,8 +19,6 @@ function run {
         slurm_batch_job.sh
 }
 
-[[ $# -ne 1 ]] && { usage; exit 0; }
-FORECAST_NAME=$1
 sbatch_opts=()
 sbatch_opts+=("--job-name=eval-fc")
 sbatch_opts+=("--time=00:15:00")
