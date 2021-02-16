@@ -16,7 +16,8 @@ from pynextsim.gmshlib import GmshMesh
 import pynextsim.lib as nsl
 
 # containers for interpolated data
-EC_DATA = {}
+EC_DATA = dict()
+DST_DATA = dict()
 
 # nextsim ref date
 NEXTSIM_REF_DATE = dt.datetime(1900, 1, 1)
@@ -163,7 +164,7 @@ def get_ec_var(ec_ds, var_name, ec_pts, dst_ecp, dst_shape):
         shape of destination grid
     """
     data = ec_ds.variables[ec_var_name][:, ::-1, :] #flip lat
-    data = np.concatenate([data[:,:,-1], data], axis=2) #make cyclic in lon
+    data = np.concatenate([data[:,:,-1:], data], axis=2) #make cyclic in lon
     return interpolate(data, ec_pts, dst_ecp, dst_shape)
 
 
@@ -181,8 +182,6 @@ def get_ec_pts(ec_ds):
         ECMWF time, latitude, longitude coordinates
 
     """
-    ec_filename = date.strftime(EC_FILEMASK)
-    ec_ds = Dataset(ec_filename)
     ec_lon_vec = np.array([-180.]+ list(ec_ds.variables['lon'][:]))# make lon cyclic
     ec_lat_vec = ec_ds.variables['lat'][::-1] #make lat increase
     ec_time_vec = np.arange(0, 24, 6)
@@ -210,12 +209,12 @@ def set_destination_coordinates():
     """
     # coordinates on destination grid
     # X,Y (NEXTSIM)
-    dst_grid = GmshMesh(MSH_FILE, projection=DST_PROJ).get_grid(resolution=DST_RES)
+    dst_grid = GmshMesh(MSH_FILE, projection=DST_PROJ).boundary.get_grid(resolution=DST_RES)
     dst_vec = {
         'x': dst_grid.xy[0][0],
         'y': dst_grid.xy[1][:,0],
         'time': np.arange(0, 24, 6),
-    }
+        }
     dst_t_grd, dst_y_grd, dst_x_grd  = np.meshgrid(dst_vec['time'], dst_vec['y'], dst_vec['x'], indexing='ij')
     dst_shape = dst_t_grd.shape
 
@@ -291,70 +290,73 @@ def export(date, dst_vec, dst_ecp, dst_shape):
 
     """
     # Create dataset for output
-    dst_ds = Dataset(NEW_FILEMASK % date, 'w')
+    dst_file = date.strftime(NEW_FILEMASK)
+    dst_dir = os.path.dirname(dst_file)
+    os.makedirs(dst_dir, exist_ok=True)
 
-    # add dimensions
-    dim_attrs = dict(
-            time=dict(
-                standard_name = "time" ,
-                long_name = "time" ,
-                units = "days since 1900-01-01 00:00:00" ,
-                calendar = "standard" ,
-                ),#don't worry about time_bnds
-            y=dict(
-                standard_name = "projection_y_coordinate" ,
-		units = "m" ,
-		axis = "Y" ,
-                ),
-            x=dict(
-                standard_name = "projection_x_coordinate" ,
-		units = "m" ,
-		axis = "X" ,
-                ),
-            )
-    for dim_name in ['time', 'y', 'x']:
-        data = dst_vec[dim_name]
-        len_ = len(data)
-        if dim_name == 'time':
-            len_ = None
-            t0 = (date - NEXTSIM_REF_DATE).days
-            data = np.array([t0 + h/24 for h in data]) #now time is days since NEXTSIM_REF_DATE
-        dst_dim = dst_ds.createDimension(dim_name, len_)
-        dst_var = dst_ds.createVariable(dim_name, 'f8', (dim_name,), zlib=True)
-        dst_var.setncattrs(dim_attrs[dim_name])
-        dst_var[:] = data
+    print(f'Saving {dst_file}')
+    with Dataset(dst_file, 'w') as dst_ds:
+        # add dimensions
+        dim_attrs = dict(
+                time=dict(
+                    standard_name = "time" ,
+                    long_name = "time" ,
+                    units = "days since 1900-01-01 00:00:00" ,
+                    calendar = "standard" ,
+                    ),#don't worry about time_bnds
+                y=dict(
+                    standard_name = "projection_y_coordinate" ,
+                    units = "m" ,
+                    axis = "Y" ,
+                    ),
+                x=dict(
+                    standard_name = "projection_x_coordinate" ,
+                    units = "m" ,
+                    axis = "X" ,
+                    ),
+                )
+        for dim_name in ['time', 'y', 'x']:
+            data = dst_vec[dim_name]
+            len_ = len(data)
+            if dim_name == 'time':
+                len_ = None
+                t0 = (date - NEXTSIM_REF_DATE).days
+                data = np.array([t0 + h/24 for h in data]) #now time is days since NEXTSIM_REF_DATE
+            dst_dim = dst_ds.createDimension(dim_name, len_)
+            dst_var = dst_ds.createVariable(dim_name, 'f8', (dim_name,), zlib=True)
+            dst_var.setncatts(dim_attrs[dim_name])
+            dst_var[:] = data
 
-    # add interpolated/rotated variables
-    for dst_var_name, info in DST_VARS.items():
-        dst_var = dst_ds.createVariable(dst_var_name, 'f4', ('time', 'y', 'x',), zlib=True)
-        dst_var.setncattrs(info['ncatts'])
-        dst_var[:] = DST_DATA[dst_var_name]
-        dst_var.setncattr('grid_mapping', 'projection_stereo')
+        # add interpolated/rotated variables
+        for dst_var_name, info in DST_VARS.items():
+            dst_var = dst_ds.createVariable(dst_var_name, 'f4', ('time', 'y', 'x',), zlib=True)
+            dst_var.setncatts(info['ncatts'])
+            dst_var[:] = DST_DATA[dst_var_name]
+            dst_var.setncattr('grid_mapping', 'projection_stereo')
 
-    # add projection variable
-    dst_var = dst_ds.createVariable('projection_stereo', 'i1')
-    dst_var.setncattrs(DST_PROJ.ncattrs("polar_stereographic"))
+        # add projection variable
+        dst_var = dst_ds.createVariable('projection_stereo', 'i1')
+        dst_var.setncatts(DST_PROJ.ncattrs("polar_stereographic"))
 
-    # add lon/lat
-    dst_lon_grd = dst_ecp[:, 2].reshape(dst_shape)[0]
-    dst_lat_grd = dst_ecp[:, 1].reshape(dst_shape)[0]
-    for var_name, var_data in zip(
-            ['longitude', 'latitude'],
-            [dst_lon_grd, dst_lat_grd],
-            ['degree_east', 'degree_north'],
-            ):
-        dst_var = dst_ds.createVariable(var_name, 'f8', ('y', 'x',), zlib=True)
-        for ncattr in ar_var.ncattrs():
-            dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
-        dst_var[:] = var_data
-
-    dst_ds.close()
+        # add lon/lat
+        dst_lon_grd = dst_ecp[:, 2].reshape(dst_shape)[0]
+        dst_lat_grd = dst_ecp[:, 1].reshape(dst_shape)[0]
+        for var_name, var_data, units in zip(
+                ['longitude', 'latitude'],
+                [dst_lon_grd, dst_lat_grd],
+                ['degree_east', 'degree_north'],
+                ):
+            dst_var = dst_ds.createVariable(var_name, 'f8', ('y', 'x',), zlib=True)
+            dst_var.setncattr('standard_name', var_name)
+            dst_var.setncattr('long_name', var_name)
+            dst_var.setncattr('units', units)
+            dst_var[:] = var_data
 
 
 # Destination variables
 DST_VARS = {
     'x_wind_10m' : {
-        'ec_vars': ['U10M'],
+        'ec_vars': ['10U'],
         'ec_func': lambda x : x,
         'ncatts': dict(
             long_name = "Zonal 10 metre wind (U10M)" ,
@@ -363,7 +365,7 @@ DST_VARS = {
             ),
     },
     'y_wind_10m' : {
-        'ec_vars': ['V10M'],
+        'ec_vars': ['10V'],
         'ec_func': lambda x : x,
         'ncatts': dict(
             long_name = "Meridional 10 metre wind (V10M)" ,
@@ -372,7 +374,7 @@ DST_VARS = {
             ),
     },
     'air_temperature_2m': {
-        'ec_vars': ['T2M'],
+        'ec_vars': ['2T'],
         'ec_func': lambda x: x - _KELVIN, #convert from Kelvin to degrees Celsius
         'ncatts': dict(
             long_name = "Screen level temperature (T2M)" ,
@@ -381,7 +383,7 @@ DST_VARS = {
             )
     },
     'specific_humidity_2m': {
-        'ec_vars': ['D2M', 'MSL'],
+        'ec_vars': ['2D', 'MSL'],
         'ec_func': specific_humidity_2m,
         'ncatts': dict(
             long_name = "Screen level specific humidity" ,
@@ -426,7 +428,7 @@ DST_VARS = {
             ),
     },
     'derivative_of_snowfall_amount_wrt_time' : {
-        'ec_vars': ['T2M', 'TP'],
+        'ec_vars': ['2T', 'TP'],
         'ec_func': derivative_of_snowfall_amount_wrt_time,
         'ncatts': dict(
 	    long_name = "Snowfall rate",
@@ -436,12 +438,15 @@ DST_VARS = {
     },
 }
 
+
 if __name__ == '__main__':
 
     args = parse_args(sys.argv[1:])
-    with Dataset(args.date.strftime(EC_FILEMASK), 'r') as ec_ds:
+    ec2_file = args.date.strftime(EC_FILEMASK)
+    print(f'Opening {ec2_file}')
+    with Dataset(ec2_file, 'r') as ec_ds:
         ec_pts = get_ec_pts(ec_ds)
-        dst_grid, dst_vec, dst_ecp, dst_arp, dst_shape = set_destination_coordinates()
+        dst_grid, dst_vec, dst_ecp, dst_shape = set_destination_coordinates()
 
         # fetch, interpolate and blend all variables from ECMWF
         for dst_var_name in DST_VARS:
@@ -459,8 +464,10 @@ if __name__ == '__main__':
             DST_DATA[dst_var_name] = DST_VARS[dst_var_name]['ec_func'](*ec_args)
 
     # rotate winds
-    DST_DATA['x_wind_10m'], DST_DATA['y_wind_10m'] = nsl.rotate_velocities(
-            DST_PROJ, *dst_grid.xy, DST_DATA['x_wind_10m'], DST_DATA['y_wind_10m']
-            )
+    print('Rotate winds')
+    for i in range(4):
+        DST_DATA['x_wind_10m'][i], DST_DATA['y_wind_10m'][i] = nsl.rotate_velocities(
+                DST_PROJ, *dst_grid.xy, DST_DATA['x_wind_10m'][i], DST_DATA['y_wind_10m'][i]
+                )
 
-    export(args.date, ar_ds, dst_ecp, dst_vec, dst_shape)
+    export(args.date, dst_vec, dst_ecp, dst_shape)
