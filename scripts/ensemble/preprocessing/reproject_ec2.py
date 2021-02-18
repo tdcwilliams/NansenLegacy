@@ -27,13 +27,13 @@ _KELVIN = 273.15 # [C]
 
 # filenames
 EC_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic/ec2_start%Y%m%d.nc'
-NEW_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic_stereographic/ec2_start%Y%m%d.nc'
-MSH_FILE = '/Data/sim/data/mesh/unref/large_arctic_100km.msh'
+NEW_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic_stereographic/generic_atm_%Y%m%d.nc'
 
 # Destination grid
-# neXtSIM default projection
-DST_PROJ = ProjectionInfo()
+MSH_FILE = '/Data/sim/data/mesh/unref/large_arctic_10km.msh' # grid should cover this mesh file
+DST_PROJ = ProjectionInfo() # neXtSIM default projection
 DST_RES = 10e3 #10km grid
+DST_GRID_BORDER = 100e3 #100km buffer so model doesn't crash if any mesh points are outside the grid
 
 
 def parse_args(args):
@@ -209,7 +209,8 @@ def set_destination_coordinates():
     """
     # coordinates on destination grid
     # X,Y (NEXTSIM)
-    dst_grid = GmshMesh(MSH_FILE, projection=DST_PROJ).boundary.get_grid(resolution=DST_RES)
+    dst_grid = GmshMesh(MSH_FILE, projection=DST_PROJ).boundary.get_grid(
+            resolution=DST_RES, border=DST_GRID_BORDER)
     dst_vec = {
         'x': dst_grid.xy[0][0],
         'y': dst_grid.xy[1][:,0],
