@@ -33,7 +33,7 @@ MSH_FILE = '/Data/sim/data/mesh/unref/large_arctic_100km.msh'
 # Destination grid
 # neXtSIM default projection
 DST_PROJ = ProjectionInfo()
-DST_RES = 50e3 #10km grid
+DST_RES = 10e3 #10km grid
 
 
 def parse_args(args):
@@ -375,20 +375,20 @@ DST_VARS = {
     },
     'air_temperature_2m': {
         'ec_vars': ['2T'],
-        'ec_func': lambda x: x - _KELVIN, #convert from Kelvin to degrees Celsius
+        'ec_func': lambda x : x,
         'ncatts': dict(
             long_name = "Screen level temperature (T2M)" ,
             standard_name = "air_temperature" ,
-            units = "degree_celsius" ,
+            units = "K" ,
             )
     },
-    'specific_humidity_2m': {
-        'ec_vars': ['2D', 'MSL'],
-        'ec_func': specific_humidity_2m,
+    'dew_point_temperature_2m': {
+        'ec_vars': ['2D'],
+        'ec_func': lambda x : x,
         'ncatts': dict(
-            long_name = "Screen level specific humidity" ,
-            standard_name = "specific_humidity" ,
-            units = "kg/kg" ,
+            long_name = "Screen level dew point temperature (D2M)" ,
+            standard_name = "dew_point_temperature" ,
+            units = "K" ,
             )
     },
     'derivative_of_surface_downwelling_shortwave_flux_in_air_wrt_time': {
@@ -467,7 +467,11 @@ if __name__ == '__main__':
     print('Rotate winds')
     for i in range(4):
         DST_DATA['x_wind_10m'][i], DST_DATA['y_wind_10m'][i] = nsl.rotate_velocities(
-                DST_PROJ, *dst_grid.xy, DST_DATA['x_wind_10m'][i], DST_DATA['y_wind_10m'][i]
+                DST_PROJ, *dst_grid.xy,
+                DST_DATA['x_wind_10m'][i], DST_DATA['y_wind_10m'][i],
+                fill_polar_hole=True,
                 )
+        assert(np.all(np.isfinite(DST_DATA['x_wind_10m'][i])))
+        assert(np.all(np.isfinite(DST_DATA['y_wind_10m'][i])))
 
     export(args.date, dst_vec, dst_ecp, dst_shape)
