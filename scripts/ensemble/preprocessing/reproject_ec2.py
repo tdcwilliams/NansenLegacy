@@ -27,6 +27,7 @@ _KELVIN = 273.15 # [C]
 
 # filenames
 EC_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic/ec2_start%Y%m%d.nc'
+#EC_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic/0.1deg/fake_files/ec2_start%Y%m%d.nc' #fill gaps
 NEW_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic_stereographic/generic_atm_%Y%m%d.nc'
 
 # Destination grid
