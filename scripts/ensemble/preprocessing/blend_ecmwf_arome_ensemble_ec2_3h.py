@@ -527,7 +527,7 @@ def export4d(outfile, ar_ds, dst_ecp, dst_vec0, dst_shape):
         add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape)
 
         # add blended variables
-        for dst_var_name in DST_VARS:
+        for dst_var_name in DST_DATA:
             dst_var = dst_ds.createVariable(dst_var_name, 'f4',
                     ('time', 'ensemble_member', 'y', 'x',),
                     **KW_COMPRESSION)
@@ -586,37 +586,35 @@ if 0:
     #dst_var = 'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time'
     DST_VARS = {dst_var: DST_VARS[dst_var]}
 
-def rotate_winds(xg, yg, u, v):
-    u, v = data[uname], data[vname]
-    nt = u.shape[0]
-    for i in range(nt):
-        u[i], v[i] = nsl.rotate_velocities(
-                DST_PI, xg, yg, u[i], v[i], fill_polar_hole=True)
-        assert(np.all(np.isfinite(u[i])))
-        assert(np.all(np.isfinite(v[i])))
+def rotate_winds(xg, yg, u, v, **kwargs):
+    (a, b, c, d), gd = nsl.rotate_velocities_weights(DST_PI, xg, yg, **kwargs)
+    for ui, vi in zip(u, v):
+        ui[gd], vi[gd] = a*ui[gd] + b*vi[gd], c*ui[gd] + d*vi[gd]
+    assert(np.all(np.isfinite(u)))
+    assert(np.all(np.isfinite(v)))
     return u, v
 
 def load_transformed_ECMWF(ec_ds, dst_vec, in_ec2_time_range, ec_pts, dst_ecp, dst_shape):
     # fetch, interpolate all variables (and rotate velocities) from ECMWF
+    print('Transform ECMWF data')
     ec_data = dict()
     for dst_var_name in DST_VARS:
         ec_var_names = DST_VARS[dst_var_name]['ec_vars']
         for ec_var_name in ec_var_names:
             if ec_var_name in ec_data:
                 continue
-            print('Interpolate', ec_var_name)
+            print('- Interpolate', ec_var_name)
             ec_var = get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range)
             dst_ecd_grd = interpolate(ec_var, ec_pts, dst_ecp, dst_shape)
             ec_data[ec_var_name] = dst_ecd_grd
 
     # rotate winds
-    print('Rotate winds')
+    print('- Rotate winds')
     xg, yg = np.meshgrid(dst_vec['x'], dst_vec['y'])
-    for i in range(len(in_ec2_time_range)):
-        ec_data['10U'], ec_data['10V'] = rotate_winds(
-                xg, yg, ec_data['10U'], ec_data['10V'])
+    ec_data['10U'], ec_data['10V'] = rotate_winds(xg, yg, ec_data['10U'], ec_data['10V'])
 
     # convert to AROME variables
+    print('- Convert variables')
     for dst_var_name in DST_VARS:
         ec_var_names = DST_VARS[dst_var_name]['ec_vars']
         ec_args = [ec_data[ec_var_name] for ec_var_name in ec_var_names]
@@ -624,6 +622,7 @@ def load_transformed_ECMWF(ec_ds, dst_vec, in_ec2_time_range, ec_pts, dst_ecp, d
 
 def load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_proj, ar_shp, ar_pts, dst_arp, dst_shape):
 
+    print(f'Transform AROME data for ensemble member {i_ens}')
     ar_data = dict()
     for dst_var_name in DST_VARS:
         # Interpolate data from AROME
@@ -633,16 +632,10 @@ def load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_proj, ar_shp, ar_pts, dst_a
         ar_data[dst_var_name] = interpolate(ar_var, ar_pts, dst_arp, dst_shape)
 
     # rotate winds
-    print('Rotate winds')
+    print('- Rotate winds')
     xg, yg = np.meshgrid(dst_vec['x'], dst_vec['y'])
-    for i in range(len(in_ec2_time_range)):
-        ar_data['x_wind_10m'][i], ar_data['y_wind_10m'][i] = nsl.rotate_velocities(
-                DST_PI, xg, yg,
-                ar_data['x_wind_10m'][i], ar_data['y_wind_10m'][i],
-                dst_proj=ar_proj,
-                )
-        assert(np.all(np.isfinite(ar_data['x_wind_10m'][i])))
-        assert(np.all(np.isfinite(ar_data['y_wind_10m'][i])))
+    ar_data['x_wind_10m'], ar_data['y_wind_10m'] = rotate_winds(xg, yg, ar_data['x_wind_10m'], ar_data['y_wind_10m'],
+            src_proj=ar_proj)
     return ar_data
 
 
@@ -685,13 +678,12 @@ def run(args):
     sz = list(dst_ardist_grd.shape)
     num_ens_mems = 2 #ar_ds.dimensions['ensemble_member'].size
     sz.insert(1, num_ens_mems)
-    DST_DATA = defaultdict(lambda : np.zeros(sz))
-
+    for dst_var_name in DST_VARS:
+        DST_DATA[dst_var_name] = np.zeros(sz)
 
     # fetch, interpolate and blend all variables from ECMWF and AROME
     load_transformed_ECMWF(ec_ds, dst_vec, in_ec2_time_range, ec_pts, dst_ecp, dst_shape)
     for i_ens in range(num_ens_mems):
-        print('AROME ensemble member: %i' %i_ens)
         ar_data = load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_proj, ar_shp, ar_pts, dst_arp, dst_shape)
 
         # Compute destination product from ECMWF data
@@ -719,9 +711,10 @@ def run(args):
                 plt.close()
 
         # blend and add to destination data
-        for dst_var_name in ar_data:
+        print('- Blending AROME and ECMWF')
+        for dst_var_name in DST_VARS:
             DST_DATA[dst_var_name][:, i_ens, :, :] = blend(
-                    ar_data[dst_var_name], ar_data[dst_var_name], dst_ardist_grd)
+                    ar_data[dst_var_name], EC_DATA[dst_var_name], dst_ardist_grd)
 
     #export the files
     if EXPORT4D:
