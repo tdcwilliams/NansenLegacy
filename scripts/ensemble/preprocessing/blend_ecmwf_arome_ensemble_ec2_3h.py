@@ -12,6 +12,7 @@ import numpy as np
 import pyproj
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
+from collections import defaultdict
 
 from pynextsim.projection_info import ProjectionInfo
 import pynextsim.lib as nsl
@@ -61,6 +62,7 @@ DST_X_RES, DST_Y_RES = 2500, 2500
 
 VALID_DATE = lambda x : dt.datetime.strptime(x, '%Y%m%d')
 KW_COMPRESSION = dict(zlib=True)
+
 
 def parse_args(args):
     ''' parse input arguments '''
@@ -260,7 +262,7 @@ def set_destination_coordinates(ar_proj, ar_ds):
 
     Parameters
     ----------
-    ar_proj : Pyproj
+    ar_proj : pyproj.Proj
         AROME projection
 
     Returns
@@ -587,7 +589,7 @@ if 0:
 def rotate_winds(xg, yg, u, v):
     u, v = data[uname], data[vname]
     nt = u.shape[0]
-    for i in range(nt)):
+    for i in range(nt):
         u[i], v[i] = nsl.rotate_velocities(
                 DST_PI, xg, yg, u[i], v[i], fill_polar_hole=True)
         assert(np.all(np.isfinite(u[i])))
@@ -620,7 +622,7 @@ def load_transformed_ECMWF(ec_ds, dst_vec, in_ec2_time_range, ec_pts, dst_ecp, d
         ec_args = [ec_data[ec_var_name] for ec_var_name in ec_var_names]
         EC_DATA[dst_var_name] = DST_VARS[dst_var_name]['ec_func'](*ec_args)
 
-def load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_shp, ar_pts, dst_arp, dst_shape):
+def load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_proj, ar_shp, ar_pts, dst_arp, dst_shape):
 
     ar_data = dict()
     for dst_var_name in DST_VARS:
@@ -637,7 +639,7 @@ def load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_shp, ar_pts, dst_arp, dst_s
         ar_data['x_wind_10m'][i], ar_data['y_wind_10m'][i] = nsl.rotate_velocities(
                 DST_PI, xg, yg,
                 ar_data['x_wind_10m'][i], ar_data['y_wind_10m'][i],
-                fill_polar_hole=True,
+                dst_proj=ar_proj,
                 )
         assert(np.all(np.isfinite(ar_data['x_wind_10m'][i])))
         assert(np.all(np.isfinite(ar_data['y_wind_10m'][i])))
@@ -652,7 +654,7 @@ def run(args):
     -----------
     args : argparse.Namespace
     '''
-    os.make_dirs(os.path.dirname(NEW_FILEMASK))
+    os.makedirs(os.path.dirname(NEW_FILEMASK), exist_ok=True)
     outfile = args.date.strftime(NEW_FILEMASK)
 
     # open arome file and ecmwf file
@@ -681,16 +683,16 @@ def run(args):
     #        add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape)
 
     sz = list(dst_ardist_grd.shape)
-    num_ens_mems = ar_ds.dimensions['ensemble_member'].size
+    num_ens_mems = 2 #ar_ds.dimensions['ensemble_member'].size
     sz.insert(1, num_ens_mems)
-    DST_DATA[dst_var_name] = np.zeros(sz)
+    DST_DATA = defaultdict(lambda : np.zeros(sz))
 
 
     # fetch, interpolate and blend all variables from ECMWF and AROME
     load_transformed_ECMWF(ec_ds, dst_vec, in_ec2_time_range, ec_pts, dst_ecp, dst_shape)
     for i_ens in range(num_ens_mems):
         print('AROME ensemble member: %i' %i_ens)
-        ar_data = load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_shp, ar_pts, dst_arp, dst_shape)
+        ar_data = load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_proj, ar_shp, ar_pts, dst_arp, dst_shape)
 
         # Compute destination product from ECMWF data
         if 0:
