@@ -590,26 +590,24 @@ def rotate_winds(xg, yg, u, v, **kwargs):
     (a, b, c, d), gd = nsl.rotate_velocities_weights(DST_PI, xg, yg, **kwargs)
     for ui, vi in zip(u, v):
         ui[gd], vi[gd] = a*ui[gd] + b*vi[gd], c*ui[gd] + d*vi[gd]
-    assert(np.all(np.isfinite(u)))
-    assert(np.all(np.isfinite(v)))
     return u, v
 
 def load_transformed_ECMWF(ec_ds, dst_vec, in_ec2_time_range, ec_pts, dst_ecp, dst_shape):
     # fetch, interpolate all variables (and rotate velocities) from ECMWF
-    print('Transform ECMWF data')
+    print('Transforming ECMWF data')
     ec_data = dict()
     for dst_var_name in DST_VARS:
         ec_var_names = DST_VARS[dst_var_name]['ec_vars']
         for ec_var_name in ec_var_names:
             if ec_var_name in ec_data:
                 continue
-            print('- Interpolate', ec_var_name)
+            print('- Interpolating', ec_var_name)
             ec_var = get_ec2_var(ec_ds, ec_var_name, in_ec2_time_range)
             dst_ecd_grd = interpolate(ec_var, ec_pts, dst_ecp, dst_shape)
             ec_data[ec_var_name] = dst_ecd_grd
 
     # rotate winds
-    print('- Rotate winds')
+    print('- Rotating winds')
     xg, yg = np.meshgrid(dst_vec['x'], dst_vec['y'])
     ec_data['10U'], ec_data['10V'] = rotate_winds(xg, yg, ec_data['10U'], ec_data['10V'])
 
@@ -622,17 +620,17 @@ def load_transformed_ECMWF(ec_ds, dst_vec, in_ec2_time_range, ec_pts, dst_ecp, d
 
 def load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_proj, ar_shp, ar_pts, dst_arp, dst_shape):
 
-    print(f'Transform AROME data for ensemble member {i_ens}')
+    print(f'Transforming AROME data for ensemble member {i_ens}')
     ar_data = dict()
     for dst_var_name in DST_VARS:
         # Interpolate data from AROME
-        print('- Interpolate', dst_var_name)
+        print('- Interpolating', dst_var_name)
         ar_var = np.zeros(ar_shp) #convert to 3d array
         ar_var[:] = ar_ds[dst_var_name][:, i_ens, :, :]
         ar_data[dst_var_name] = interpolate(ar_var, ar_pts, dst_arp, dst_shape)
 
     # rotate winds
-    print('- Rotate winds')
+    print('- Rotating winds')
     xg, yg = np.meshgrid(dst_vec['x'], dst_vec['y'])
     ar_data['x_wind_10m'], ar_data['y_wind_10m'] = rotate_winds(xg, yg, ar_data['x_wind_10m'], ar_data['y_wind_10m'],
             src_proj=ar_proj)
@@ -715,6 +713,7 @@ def run(args):
         for dst_var_name in DST_VARS:
             DST_DATA[dst_var_name][:, i_ens, :, :] = blend(
                     ar_data[dst_var_name], EC_DATA[dst_var_name], dst_ardist_grd)
+            assert(np.all(np.isfinite(DST_DATA[dst_var_name][:, i_ens, :, :])))
 
     #export the files
     if EXPORT4D:
