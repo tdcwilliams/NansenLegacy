@@ -587,7 +587,7 @@ if 0:
     DST_VARS = {dst_var: DST_VARS[dst_var]}
 
 def rotate_winds(xg, yg, u, v, **kwargs):
-    (a, b, c, d), gd = nsl.rotate_velocities_weights(DST_PI, xg, yg, **kwargs)
+    (a, b, c, d), gd = nsl.transform_vectors_weights(DST_PI.pyproj, xg, yg, **kwargs)
     for ui, vi in zip(u, v):
         ui[gd], vi[gd] = a*ui[gd] + b*vi[gd], c*ui[gd] + d*vi[gd]
     return u, v
