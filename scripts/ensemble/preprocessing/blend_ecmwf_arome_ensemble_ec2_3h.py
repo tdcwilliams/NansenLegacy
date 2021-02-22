@@ -43,7 +43,6 @@ GRID_FILE = NEW_FILEMASK.replace('%Y%m%d', 'grid')
 # Destination grid
 # neXtSIM default projection
 DST_PI = ProjectionInfo()
-EXPORT4D = True
 
 # extent overlaps with AROME grid
 DST_X_MIN = -300000
@@ -447,54 +446,6 @@ def add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape):
                 'latitude' : dst_ecp[:, 1].reshape(dst_shape)[0],
                 }[var_name]
 
-def export3d(outfile0, ar_ds, dst_ecp, dst_vec0, dst_shape):
-    """ Export blended product - one file for each ensemble member
-
-    Parameters
-    ----------
-    outfile : str
-        netcdf output filename
-    ar_ds : netCDF4.Dataset
-        source AROME dataset
-    dst_ecp : Nx3 ndarray
-        destination coordinates for ECMWF (time, lat, lon)
-    dst_vec : dict
-        three vectors with destination coordinates (time, y, x)
-    dst_shape : tuple
-        shape of destination grid
-
-    """
-    # Create dataset for output
-    skip_var_attr = []#['_FillValue', 'grid_mapping']
-    num_ens_mems = len(dst_vec0["ensemble_member"])
-    dst_vec = dict(**dst_vec0)
-    del(dst_vec["ensemble_member"])
-    del(dst_vec["time"])
-    for i_ens in range(num_ens_mems):
-        outfile = outfile0.replace('.nc', '.mem%.3i.nc' %(i_ens+1))
-        print('Exporting %s' %outfile)
-        if os.path.exists(outfile):
-            print('%s exists - skipping' %outfile)
-            continue
-        # create dataset
-        with Dataset(outfile, 'w') as dst_ds:
-
-            # add dimensions, lon/lat, stereo
-            add_time_to_file(dst_ds, ar_ds)
-            add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape)
-
-            # add blended variables
-            for dst_var_name in DST_VARS:
-                dst_var = dst_ds.createVariable(dst_var_name, 'f4',
-                        ('time', 'y', 'x',),
-                        **KW_COMPRESSION)
-                ar_var = ar_ds.variables[dst_var_name]
-                for ncattr in ar_var.ncattrs():
-                    if ncattr in skip_var_attr:
-                        continue
-                    dst_var.setncattr(ncattr, ar_var.getncattr(ncattr))
-                dst_var.setncattr('grid_mapping', 'projection_stereo')
-                dst_var[:] = DST_DATA[dst_var_name][:,i_ens,:,:]
 
 def export4d(outfile, ar_ds, dst_ecp, dst_vec0, dst_shape):
     """ Export blended product - single file with ensemble_member dimension
@@ -513,9 +464,6 @@ def export4d(outfile, ar_ds, dst_ecp, dst_vec0, dst_shape):
         shape of destination grid
 
     """
-    if os.path.exists(outfile):
-        print('%s exists - skipping' %outfile)
-        return
     # Create dataset for output
     skip_var_attr = []#['_FillValue', 'grid_mapping']
     # create dataset
@@ -647,6 +595,9 @@ def run(args):
     '''
     os.makedirs(os.path.dirname(NEW_FILEMASK), exist_ok=True)
     outfile = args.date.strftime(NEW_FILEMASK)
+    if os.path.exists(outfile):
+        print(f'{outfile} exists - skipping')
+        return
 
     # open arome file and ecmwf file
     ar_ds, ar_proj, ar_pts = open_arome(args.date)
@@ -716,10 +667,7 @@ def run(args):
             assert(np.all(np.isfinite(DST_DATA[dst_var_name][:, i_ens, :, :])))
 
     #export the files
-    if EXPORT4D:
-        export4d(outfile, ar_ds, dst_ecp, dst_vec, dst_shape)
-    else:
-        export3d(outfile, ar_ds, dst_ecp, dst_vec, dst_shape)
+    export4d(outfile, ar_ds, dst_ecp, dst_vec, dst_shape)
 
 if __name__ == '__main__':
     args = parse_args(sys.argv[1:])
