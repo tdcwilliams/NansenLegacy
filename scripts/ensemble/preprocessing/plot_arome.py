@@ -127,6 +127,7 @@ class PlotAtmForcing:
             dto1 = dto0 + delt
             yield dto0, dto1, self.average_data(nci, varname, dto0, dto1)
             dto0 = dto1
+
     def get_gridded_figure(self, data, clim, clabel):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection=self.crs)

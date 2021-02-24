@@ -281,7 +281,8 @@ def set_destination_coordinates(ar_proj, ar_ds):
         'x': np.arange(DST_X_MIN, DST_X_MAX, DST_X_RES),
         'y': np.arange(DST_Y_MAX, DST_Y_MIN, -DST_Y_RES),
         'time': np.copy(TIME_VEC),
-        'ensemble_member': np.arange(ar_ds.variables['ensemble_member'].size),
+        'ensemble_member': ar_ds.variables['ensemble_member'].size,
+        #'ensemble_member': np.arange(2), #uncomment for testing
     }
 
     dst_t_grd, dst_y_grd, dst_x_grd  = np.meshgrid(dst_vec['time'], dst_vec['y'], dst_vec['x'], indexing='ij')
@@ -529,10 +530,13 @@ DST_VARS = {
     }
 if 0:
     # test on smaller subset of variables
-    dst_var = 'air_temperature_2m'
-    #dst_var = 'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time'
-    #dst_var = 'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time'
-    DST_VARS = {dst_var: DST_VARS[dst_var]}
+    dst_vars = [
+            'x_wind_10m',
+            'y_wind_10m',
+            'air_temperature_2m',
+            'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time',
+            ]
+    DST_VARS = {v: DST_VARS[v] for v in dst_vars}
 
 def rotate_winds(xg, yg, u, v, **kwargs):
     (a, b, c, d), gd = nsl.transform_vectors_weights(DST_PI.pyproj, xg, yg, **kwargs)
@@ -577,11 +581,12 @@ def load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_proj, ar_shp, ar_pts, dst_a
         ar_var[:] = ar_ds[dst_var_name][:, i_ens, :, :]
         ar_data[dst_var_name] = interpolate(ar_var, ar_pts, dst_arp, dst_shape)
 
-    # rotate winds
+    # rotate winds (from lon,lat oriented to polar stereographic)
     print('- Rotating winds')
     xg, yg = np.meshgrid(dst_vec['x'], dst_vec['y'])
-    ar_data['x_wind_10m'], ar_data['y_wind_10m'] = rotate_winds(xg, yg, ar_data['x_wind_10m'], ar_data['y_wind_10m'],
-            src_proj=ar_proj)
+    ar_data['x_wind_10m'], ar_data['y_wind_10m'] = rotate_winds(
+            xg, yg, ar_data['x_wind_10m'], ar_data['y_wind_10m'],
+            )
     return ar_data
 
 
