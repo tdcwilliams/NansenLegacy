@@ -281,7 +281,7 @@ def set_destination_coordinates(ar_proj, ar_ds):
         'x': np.arange(DST_X_MIN, DST_X_MAX, DST_X_RES),
         'y': np.arange(DST_Y_MAX, DST_Y_MIN, -DST_Y_RES),
         'time': np.copy(TIME_VEC),
-        'ensemble_member': ar_ds.variables['ensemble_member'].size,
+        'ensemble_member': np.arange(ar_ds.variables['ensemble_member'].size),
         #'ensemble_member': np.arange(2), #uncomment for testing
     }
 
@@ -630,7 +630,7 @@ def run(args):
     #        add_grid_to_file(dst_ds, ar_ds, dst_ecp, dst_vec, dst_shape)
 
     sz = list(dst_ardist_grd.shape)
-    num_ens_mems = 2 #ar_ds.dimensions['ensemble_member'].size
+    num_ens_mems = len(dst_vec['ensemble_member'])
     sz.insert(1, num_ens_mems)
     for dst_var_name in DST_VARS:
         DST_DATA[dst_var_name] = np.zeros(sz)
