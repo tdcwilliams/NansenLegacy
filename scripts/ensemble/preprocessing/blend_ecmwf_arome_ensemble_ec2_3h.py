@@ -577,11 +577,13 @@ def load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_proj, ar_shp, ar_pts, dst_a
         ar_var[:] = ar_ds[dst_var_name][:, i_ens, :, :]
         ar_data[dst_var_name] = interpolate(ar_var, ar_pts, dst_arp, dst_shape)
 
-    # rotate winds
+    # rotate winds (from lon,lat oriented to polar stereographic)
     print('- Rotating winds')
     xg, yg = np.meshgrid(dst_vec['x'], dst_vec['y'])
-    ar_data['x_wind_10m'], ar_data['y_wind_10m'] = rotate_winds(xg, yg, ar_data['x_wind_10m'], ar_data['y_wind_10m'],
-            src_proj=ar_proj)
+    ar_data['x_wind_10m'], ar_data['y_wind_10m'] = rotate_winds(
+            xg, yg, ar_data['x_wind_10m'], ar_data['y_wind_10m'],
+            #src_proj=ar_proj,
+            )
     return ar_data
 
 
