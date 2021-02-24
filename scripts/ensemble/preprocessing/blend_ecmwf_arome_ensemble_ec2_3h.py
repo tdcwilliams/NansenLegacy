@@ -281,7 +281,8 @@ def set_destination_coordinates(ar_proj, ar_ds):
         'x': np.arange(DST_X_MIN, DST_X_MAX, DST_X_RES),
         'y': np.arange(DST_Y_MAX, DST_Y_MIN, -DST_Y_RES),
         'time': np.copy(TIME_VEC),
-        'ensemble_member': np.arange(ar_ds.variables['ensemble_member'].size),
+        'ensemble_member': ar_ds.variables['ensemble_member'].size,
+        #'ensemble_member': np.arange(2), #uncomment for testing
     }
 
     dst_t_grd, dst_y_grd, dst_x_grd  = np.meshgrid(dst_vec['time'], dst_vec['y'], dst_vec['x'], indexing='ij')
@@ -585,7 +586,6 @@ def load_transformed_AROME(ar_ds, i_ens, dst_vec, ar_proj, ar_shp, ar_pts, dst_a
     xg, yg = np.meshgrid(dst_vec['x'], dst_vec['y'])
     ar_data['x_wind_10m'], ar_data['y_wind_10m'] = rotate_winds(
             xg, yg, ar_data['x_wind_10m'], ar_data['y_wind_10m'],
-            #src_proj=ar_proj,
             )
     return ar_data
 
