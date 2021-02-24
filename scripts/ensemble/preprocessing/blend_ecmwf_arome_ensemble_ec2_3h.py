@@ -529,10 +529,13 @@ DST_VARS = {
     }
 if 0:
     # test on smaller subset of variables
-    dst_var = 'air_temperature_2m'
-    #dst_var = 'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time'
-    #dst_var = 'integral_of_surface_downwelling_longwave_flux_in_air_wrt_time'
-    DST_VARS = {dst_var: DST_VARS[dst_var]}
+    dst_vars = [
+            'x_wind_10m',
+            'y_wind_10m',
+            'air_temperature_2m',
+            'integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time',
+            ]
+    DST_VARS = {v: DST_VARS[v] for v in dst_vars}
 
 def rotate_winds(xg, yg, u, v, **kwargs):
     (a, b, c, d), gd = nsl.transform_vectors_weights(DST_PI.pyproj, xg, yg, **kwargs)
