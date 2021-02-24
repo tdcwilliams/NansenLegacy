@@ -85,9 +85,8 @@ class PlotAtmForcing:
         self.pyproj = pyproj.Proj(nci.proj_info.proj4)
         globe = cartopy.crs.Globe(
                 semimajor_axis=nci.proj_info.earth_radius,
-                flattening=0,
+                semiminor_axis=nci.proj_info.earth_radius,
                 )
-        print(nci.proj_info.standard_parallel)
         self.crs = cartopy.crs.LambertConformal(
                 central_longitude=nci.proj_info.longitude_of_central_meridian,
                 central_latitude=nci.proj_info.latitude_of_projection_origin,
