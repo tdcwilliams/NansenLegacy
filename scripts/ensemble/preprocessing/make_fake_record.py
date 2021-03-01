@@ -35,9 +35,9 @@ def parse_args(args):
     return parser.parse_args(args)
 
 def append_last_record(args):
-    dir1 = os.path.join(ROOTDIR, 'blended')
-    dir2 = os.path.join(ROOTDIR, 'blended_with_fake_record')
-    nsl.make_dir(dir2)
+    dir1 = os.path.join(ROOTDIR, 'blended_corrected')
+    dir2 = os.path.join(ROOTDIR, 'blended_corrected_with_fake_record')
+    os.makedirs(dir2, exist_ok=True)
     f1 = args.date.strftime(os.path.join(dir1, 'ec2_arome_blended_ensemble_%Y%m%d.nc'))
     f2 = args.date.strftime(os.path.join(dir2, 'ec2_arome_blended_ensemble_%Y%m%d.nc'))
     print('Making %s' %f2)

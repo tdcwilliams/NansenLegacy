@@ -1,4 +1,4 @@
-#! /bin/bash
+#! /bin/bash -x
 
 # # do 20180309 by itself for testing and save the grid
 # cmd="./blend_ecmwf_arome_ensemble_ec2_3h.py 20180309 -g"
@@ -7,11 +7,5 @@
 
 for d in `seq -w 10 31`
 do
-    dt=201803$d
-    cmd="./blend_ecmwf_arome_ensemble_ec2_3h.py $dt"
-    echo $cmd
-    $cmd
-    cmd="./make_fake_record.py $dt"
-    echo $cmd
-    $cmd
+    ./blend_ecmwf_arome_ensemble_ec2_3h.py 201803$d
 done
