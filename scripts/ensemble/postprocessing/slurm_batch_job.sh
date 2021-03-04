@@ -7,8 +7,11 @@
 #SBATCH --mem-per-cpu=32G
 #SBATCH --output=logs/slurm.%j.out
 
-[[ -z $COMMAND ]] \
-    && { echo "enter command to run with --export=COMMAND=..."; exit 1; }
-source $HOME/nextsimf.ensemble.src
+function usage {
+    echo "sbatch --export=COMMAND=\"command\",SRC_FILE=\"path-to-source-file\" `basename $0`"
+}
+[[ -z $COMMAND ]] && { usage; exit 1; }
+SRC_FILE=${SRC_FILE-"$HOME/pynextsim.sing.src"}
+source $SRC_FILE
 cd $SLURM_SUBMIT_DIR
 $COMMAND
