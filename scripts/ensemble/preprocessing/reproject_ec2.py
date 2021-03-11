@@ -28,7 +28,7 @@ _KELVIN = 273.15 # [C]
 # filenames
 EC_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic/ec2_start%Y%m%d.nc'
 #EC_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic/0.1deg/fake_files/ec2_start%Y%m%d.nc' #fill gaps
-NEW_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic_stereographic/generic_atm_%Y%m%d.nc'
+NEW_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic_stereographic/generic_ps_atm_%Y%m%d.nc'
 
 # Destination grid
 MSH_FILE = '/Data/sim/data/mesh/unref/large_arctic_10km.msh' # grid should cover this mesh file
@@ -393,7 +393,7 @@ DST_VARS = {
             units = "K" ,
             )
     },
-    'derivative_of_surface_downwelling_shortwave_flux_in_air_wrt_time': {
+    'instantaneous_downwelling_shortwave_radiation': {
         'ec_vars': ['SSRD'],
         'ec_func': deaccumulate_ecmwf,
         'ncatts': dict(
@@ -402,7 +402,7 @@ DST_VARS = {
 	    units = "W/m^2",
             ),
     },
-    'derivative_of_surface_downwelling_longwave_flux_in_air_wrt_time' : {
+    'instantaneous_downwelling_longwave_radiation' : {
         'ec_vars': ['STRD'],
         'ec_func': deaccumulate_ecmwf,
         'ncatts': dict(
@@ -411,7 +411,7 @@ DST_VARS = {
 	    units = "W/m^2",
             ),
     },
-    'air_pressure_at_sea_level': {
+    'atm_pressure': {
         'ec_vars': ['MSL'],
         'ec_func': lambda x : x,
         'ncatts': dict(
@@ -420,7 +420,7 @@ DST_VARS = {
 	    units = "Pa" ,
             ),
     },
-    'derivative_of_precipitation_amount_wrt_time': {
+    'total_precipitation_rate': {
         'ec_vars': ['TP'],
         'ec_func': derivative_of_precipitation_amount_wrt_time,
         'ncatts': dict(
@@ -429,7 +429,7 @@ DST_VARS = {
 	    units = "kg/m^2/s",
             ),
     },
-    'derivative_of_snowfall_amount_wrt_time' : {
+    'snowfall_rate' : {
         'ec_vars': ['2T', 'TP'],
         'ec_func': derivative_of_snowfall_amount_wrt_time,
         'ncatts': dict(
