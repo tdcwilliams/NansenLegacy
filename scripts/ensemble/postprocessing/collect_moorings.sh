@@ -1,6 +1,7 @@
 #! /bin/bash -x
 function usage {
     echo "Usage: $this_file ROOT_DIR"
+    echo "Collects 1st day of one member of an ensemble forecast to make an analysis"
     exit 1
 }
 
@@ -19,4 +20,3 @@ do
     nc2=$outdir/$(date -d "$fcdate" "+Moorings_%Yd%j.nc")
     ncks -d time,0,7 $nc1 -o $nc2
 done
-rm $f
