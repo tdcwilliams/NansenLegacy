@@ -17,6 +17,9 @@
 ## Queue Option (preproc for 1 node; normal for >4 nodes; also can be bigmem)
 #QOS_LINE
 
+## Ensure we have a clean environment
+#SBATCH --export=NONE
+
 ## Email info
 #SBATCH --mail-type=ALL   # Mail events (NONE, BEGIN, END, FAIL, ALL)
 #SBATCH --mail-user=EMAIL # email to the user
@@ -31,4 +34,5 @@ pyargs="PYARGS"
 #run forecast
 logdir=$forecast_dir/logs
 mkdir -p $logdir
+export NEXTSIM_DATA_DIR=$forecast_dir/data
 run_forecast.py $pyargs &> $logdir/run_forecast.log || exit 1
