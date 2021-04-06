@@ -28,7 +28,7 @@ _KELVIN = 273.15 # [C]
 # filenames
 EC_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic/ec2_start%Y%m%d.nc'
 #EC_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic/0.1deg/fake_files/ec2_start%Y%m%d.nc' #fill gaps
-NEW_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic_stereographic/generic_atm_%Y%m%d.nc'
+NEW_FILEMASK = '/Data/sim/data/ECMWF_forecast_arctic_stereographic/generic_ps_atm_%Y%m%d.nc'
 
 # Destination grid
 MSH_FILE = '/Data/sim/data/mesh/unref/large_arctic_10km.msh' # grid should cover this mesh file
@@ -361,7 +361,7 @@ DST_VARS = {
         'ec_vars': ['10U'],
         'ec_func': lambda x : x,
         'ncatts': dict(
-            long_name = "Zonal 10 metre wind (U10M)" ,
+            long_name = "10 metre wind speed in x direction (U10M)" ,
             standard_name = "u_wind_10m" ,
             units = "m/s" ,
             ),
@@ -370,7 +370,7 @@ DST_VARS = {
         'ec_vars': ['10V'],
         'ec_func': lambda x : x,
         'ncatts': dict(
-            long_name = "Meridional 10 metre wind (V10M)" ,
+            long_name = "10 metre wind speed in y direction (V10M)" ,
             standard_name = "v_wind_10m" ,
             units = "m/s" ,
             ),
@@ -393,7 +393,7 @@ DST_VARS = {
             units = "K" ,
             )
     },
-    'derivative_of_surface_downwelling_shortwave_flux_in_air_wrt_time': {
+    'instantaneous_downwelling_shortwave_radiation': {
         'ec_vars': ['SSRD'],
         'ec_func': deaccumulate_ecmwf,
         'ncatts': dict(
@@ -402,7 +402,7 @@ DST_VARS = {
 	    units = "W/m^2",
             ),
     },
-    'derivative_of_surface_downwelling_longwave_flux_in_air_wrt_time' : {
+    'instantaneous_downwelling_longwave_radiation' : {
         'ec_vars': ['STRD'],
         'ec_func': deaccumulate_ecmwf,
         'ncatts': dict(
@@ -411,7 +411,7 @@ DST_VARS = {
 	    units = "W/m^2",
             ),
     },
-    'air_pressure_at_sea_level': {
+    'atm_pressure': {
         'ec_vars': ['MSL'],
         'ec_func': lambda x : x,
         'ncatts': dict(
@@ -420,7 +420,7 @@ DST_VARS = {
 	    units = "Pa" ,
             ),
     },
-    'derivative_of_precipitation_amount_wrt_time': {
+    'total_precipitation_rate': {
         'ec_vars': ['TP'],
         'ec_func': derivative_of_precipitation_amount_wrt_time,
         'ncatts': dict(
@@ -429,7 +429,7 @@ DST_VARS = {
 	    units = "kg/m^2/s",
             ),
     },
-    'derivative_of_snowfall_amount_wrt_time' : {
+    'snowfall_rate' : {
         'ec_vars': ['2T', 'TP'],
         'ec_func': derivative_of_snowfall_amount_wrt_time,
         'ncatts': dict(
@@ -468,8 +468,8 @@ if __name__ == '__main__':
     # rotate winds
     print('Rotate winds')
     for i in range(4):
-        DST_DATA['x_wind_10m'][i], DST_DATA['y_wind_10m'][i] = nsl.rotate_velocities(
-                DST_PROJ, *dst_grid.xy,
+        DST_DATA['x_wind_10m'][i], DST_DATA['y_wind_10m'][i] = nsl.transform_vectors(
+                DST_PROJ.pyproj, *dst_grid.xy,
                 DST_DATA['x_wind_10m'][i], DST_DATA['y_wind_10m'][i],
                 fill_polar_hole=True,
                 )
