@@ -1,4 +1,4 @@
-#! /bin/bash
+#! /bin/bash -x
 # creates the config files for the member ensemble forecasts
 # NB no interaction between forecasts
 function usage {
@@ -13,12 +13,13 @@ DATE2=$3
 DURATION=$4
 NUM_ENS=11
 #anr="--allow-no-restart"
+exe="/cluster/work/users/timill/nextsimf_forecasts/arome_3km_ec2_3h.fram/nextsim.exec"
 
 for i_ens in $(seq 1 $NUM_ENS)
 do
     ens_str=$(printf "mem_%.3d" "$i_ens") #eg mem_001
     fcname="${FCNAME}.${ens_str}"
-    exe=$OUTPUT_FORECAST_DATA_DIR/$fcname/nextsim.exec
+    #exe=$OUTPUT_FORECAST_DATA_DIR/$fcname/nextsim.exec
     rerun_forecast.py $fcname $DATE1 $DATE2 $DURATION \
         -ds -1 -c -e $exe --hpc $anr
 done
