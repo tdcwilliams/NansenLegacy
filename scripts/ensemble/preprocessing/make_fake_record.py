@@ -9,7 +9,6 @@ from netCDF4 import Dataset
 import numpy as np
 import argparse
 import datetime as dt
-import pynextsim.lib as nsl
 
 #ROOTDIR = '/cluster/projects/nn2993k/sim/data/AROME_barents_ensemble'
 ROOTDIR = '/Data/sim/data/AROME_barents_ensemble'

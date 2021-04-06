@@ -6,12 +6,11 @@ import os
 import shutil
 from netCDF4 import Dataset
 import numpy as np
-import pynextsim.lib as nsl
 
 ROOTDIR = '/cluster/projects/nn2993k/sim/data/AROME_barents_ensemble'
 DIR1 = os.path.join(ROOTDIR, 'blended')
 DIR2 = os.path.join(ROOTDIR, 'blended_with_fake_record', 'fake_files')
-nsl.make_dir(DIR2)
+os.makedirs(DIR2, exist_ok=True)
 
 DST_VARS = [
     'x_wind_10m',
