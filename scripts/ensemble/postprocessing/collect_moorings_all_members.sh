@@ -16,18 +16,19 @@ function usage {
 
 this_file=$(readlink -f $0)
 this_dir=$(dirname $this_file)
-[[ $# -ne 2 ]] && usage
+[[ $# -lt 2 ]] && usage
 
 ROOT_DIR=$1
 FCNAME=$2
 STEP=${3-1}
+dir_prefix="${ROOT_DIR}/${FCNAME}.mem_"
 outdir=$ROOT_DIR/analysis/outputs
 mkdir -p $outdir
 
 if [ $STEP -eq 1 ]
 then
     # collect "analysis" for each ensemble (1st day of each ensemble)
-    for ens_dir in ${ROOT_DIR}/${FCNAME}.mem_???
+    for ens_dir in ${dir_prefix}???
     do
         $this_dir/collect_moorings.sh $ens_dir
     done
@@ -35,11 +36,12 @@ then
 fi
 
 
-ens_dir=${DIR_PREFIX}001
+ens_dir=${dir_prefix}001
 for fcdir in $ens_dir/20??????
 do
     fcdate=$(basename $fcdir)
     [[ $fcdate == "20180308" ]] && continue
     ofil=$outdir/analysis_${fcdate}.nc 
-    ncea ${DIR_PREFIX}???/analysis/outputs/Moorings_${fcdate}.nc -o $ofil
+    [[ -f $ofil ]] && continue
+    ncea ${dir_prefix}???/analysis/outputs/Moorings_${fcdate}.nc -o $ofil
 done
