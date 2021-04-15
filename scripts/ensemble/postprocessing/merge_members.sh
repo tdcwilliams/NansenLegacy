@@ -61,7 +61,6 @@ do
     else
         for n in $(seq 0 1)
         do
-            exit 1
             fcdate=$(date -d "$bdate +${n}days" "+%Y%m%d")
             mfil=$(date -d "$fcdate" "+$MOORINGS_MASK")
             flist=($ROOT_DIR/${FCNAME}.mem_???/$bdate/$mfil)
