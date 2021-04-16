@@ -24,10 +24,15 @@ STEP=${3-1}
 dir_prefix="${ROOT_DIR}/${FCNAME}.mem_"
 outdir=$ROOT_DIR/analysis/outputs
 mkdir -p $outdir
+control_dir=$ROOT_DIR/arome_3km_ec2_3h.fram
 
 if [ $STEP -eq 1 ]
 then
-    # collect "analysis" for each ensemble (1st day of each ensemble)
+    # collect control analysis (1st day of each FC)
+    $this_dir/collect_moorings.sh $control_dir
+    $this_dir/collect_drifters.sh $control_dir $control_dir/analysis/outputs
+
+    # collect "analysis" for each ensemble (1st day of each ensemble FC)
     for ens_dir in ${dir_prefix}???
     do
         $this_dir/collect_moorings.sh $ens_dir
