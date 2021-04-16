@@ -1,4 +1,5 @@
-#! /bin/bash -x
+#! /bin/bash
+set -e
 
 if [ $# -lt 2 ]
 then
@@ -27,7 +28,8 @@ function run
     nh=${#HOSTNAME}
     [[ "${HOSTNAME:$((nh-14)):14}" != "fram.sigma2.no" ]] && { sem -j $numproc_sem $1 & return; }
     cmd="singularity exec --cleanenv $PYNEXTSIM_SIF $1"
-    $cmd; return #just run on login node
+    echo $cmd
+    #$cmd; return #just run on login node
 
     # on fram, launch with sbatch
     mkdir -p logs
@@ -46,7 +48,7 @@ inputs="$fcdir -np -g arome_3km.msh"
 
 if [ $DO_CS2SMOS -eq 1 ]
 then
-   smoothing="-sig 1"
+   smoothing="-sig 10"
    CMD="evaluate_forecast.py $inputs $smoothing -s Cs2SmosThick -mm $MOORINGS_MASK"
    odir="$FCDIR/eval-cs2smos"
    run "$CMD -o $odir"
@@ -54,7 +56,7 @@ fi
 
 if [ $DO_OSISAF -eq 1 ]
 then
-   smoothing="-sig 2"
+   smoothing="-sig 10"
    CMD="evaluate_forecast.py $inputs $smoothing -s OsisafConc -mm $MOORINGS_MASK"
    odir="$FCDIR/eval-osisaf-conc"
    run "$CMD -o $odir"
@@ -67,7 +69,7 @@ fi
 
 if [ $DO_SMOS -eq 1 ]
 then
-   smoothing="-sig 2"
+   smoothing="-sig 10"
    CMD="evaluate_forecast.py $inputs -nb 1 $smoothing -s SmosThick -mm $MOORINGS_MASK"
    odir="$FCDIR/eval-smos"
    run "$CMD -o $odir"
