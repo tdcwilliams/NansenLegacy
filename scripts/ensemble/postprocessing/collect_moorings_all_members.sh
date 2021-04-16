@@ -31,6 +31,7 @@ then
     for ens_dir in ${dir_prefix}???
     do
         $this_dir/collect_moorings.sh $ens_dir
+        $this_dir/collect_drifters.sh $ens_dir $ens_dir/analysis/outputs
     done
     exit 0
 fi
