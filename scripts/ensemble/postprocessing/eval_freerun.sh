@@ -1,9 +1,9 @@
 #! /bin/bash -x
 
-if [ $# -lt 3 ]
+if [ $# -lt 2 ]
 then
     echo "Usage"
-    echo "eval_freerun.sh INPUT_DIR MOORINGS_MASK DO_CS2SMOS [DO_OSISAF] [DO_DRIFT] [DO_SMOS]"
+    echo "eval_freerun.sh INPUT_DIR MOORINGS_MASK [DO_OSISAF] [DO_DRIFT] [DO_SMOS] [DO_CS2SMOS]"
     exit 0
 fi
 ME=`readlink -f $0`
@@ -12,10 +12,10 @@ HERE=`dirname $ME`
 do_copy=0 # copy moorings if running
 FCDIR=$1
 MOORINGS_MASK=${2-"Moorings_%Ym%m.nc"}
-DO_CS2SMOS=${3}
-DO_OSISAF=${4-"0"}
-DO_DRIFT=${5-"0"}
-DO_SMOS=${6-"0"}
+DO_OSISAF=${3-"1"}
+DO_DRIFT=${4-"1"}
+DO_SMOS=${5-"1"}
+DO_CS2SMOS=${6-"0"}
 numproc_sem=12
 
 fcdir=$FCDIR/outputs
@@ -43,11 +43,6 @@ fcdir=$FCDIR/outputs
 
 # Inputs that are independant of the source
 inputs="$fcdir -np -g arome_3km.msh"
-if [ $MONTHLY_EVAL -eq 1 ]
-then
-    MONTH0=201811
-    N_MONTHS=18 # to 2020-05
-fi
 
 if [ $DO_CS2SMOS -eq 1 ]
 then
@@ -70,6 +65,14 @@ then
    run "$CMD -o $odir"
 fi
 
+if [ $DO_SMOS -eq 1 ]
+then
+   smoothing="-sig 2"
+   CMD="evaluate_forecast.py $inputs -nb 1 $smoothing -s SmosThick -mm $MOORINGS_MASK"
+   odir="$FCDIR/eval-smos"
+   run "$CMD -o $odir"
+fi
+
 if [ $DO_DRIFT -eq 1 ]
 then
    inputs_drift="$fcdir -mu 2.5"
@@ -78,20 +81,11 @@ then
    CMD="evaluate_drift_forecast.py $inputs_drift -mm $MOORINGS_MASK"
    odir="$FCDIR/eval-osisaf-drift"
    run "$CMD -o $odir"
-   exit
 
    inputs_drift="$fcdir -mu 20"
    #inputs_drift+=" -f"
    #inputs_drift="$FCDIR -np -g medium_arctic_10km.msh"
    CMD="evaluate_drift_forecast.py $inputs_drift -mm $MOORINGS_MASK"
    odir="$FCDIR/eval-osisaf-drift-mu10kpd"
-   run "$CMD -o $odir"
-fi
-
-if [ $DO_SMOS -eq 1 ]
-then
-   smoothing="-sig 2"
-   CMD="evaluate_forecast.py $inputs -nb 1 $smoothing -s SmosThick -mm $MOORINGS_MASK"
-   odir="$FCDIR/eval-smos"
    run "$CMD -o $odir"
 fi
