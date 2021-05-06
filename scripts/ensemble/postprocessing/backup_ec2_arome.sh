@@ -1,17 +1,16 @@
 #! /bin/bash -x
-root_dir=/cluster/work/users/timill/nextsimf_forecasts/arome_3km_ec2_arome_ensemble.fram/
-#root_dir=/cluster/work/users/timill/nextsimf_forecasts/arome_3km_ec2_arome_ensemble_smos.fram
+root_dir=/cluster/work/users/timill/nextsimf_forecasts/
 
-expt_dir=$root_dir/new_version
-#expt_dir=$root_dir/old_version
-#expt_dir=$root_dir/old_version_transposed
-backup_dir=/nird/projects/nird/NS2993K/NORSTORE_OSL_DISK/NS2993K/timill/Model-Results/nextsimf-ensemble/arome_3km/
-
-ename=`basename $expt_dir`
-outdir=$backup_dir/$ename
+#expt_dir="arome_3km_ec2_arome_ensemble_smos.fram"
+expt_dir="arome_3km_ec2_arome_ensemble.fram/new_version"
+#expt_dir="arome_3km_ec2_arome_ensemble.fram/old_version"
+#expt_dir="arome_3km_ec2_arome_ensemble.fram/old_version_transposed"
+my_storage="/nird/projects/nird/NS2993K/NORSTORE_OSL_DISK/NS2993K/timill"
+backup_dir="$my_storage/Model-Results/nextsimf-ensemble/arome_3km/"
+outdir=$backup_dir/$expt_dir
 mkdir -p $outdir
 
-cd $expt_dir
+cd $root_dir/$expt_dir
 tbad=() #track errors in tar
 cpbad=() #track errors in cp
 for subdir in *.mem_??? merged_files analysis arome_3km_ec2_3h.fram
