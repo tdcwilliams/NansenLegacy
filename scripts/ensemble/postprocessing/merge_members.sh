@@ -45,7 +45,7 @@ function merge_one_set {
 ROOT_DIR=$1
 FCNAME=$2
 OUTDIR=$3
-MOORINGS_MASK=${4-"Moorings.nc"}
+MOORINGS_MASK=${4-"Moorings_%Yd%j.nc"}
 mkdir -p $OUTDIR/tmp
 
 mem1_dirs=($ROOT_DIR/${FCNAME}.mem_001/20??????)
