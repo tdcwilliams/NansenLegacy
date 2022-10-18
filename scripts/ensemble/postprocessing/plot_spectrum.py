@@ -2,6 +2,7 @@
 
 import os
 import glob
+from argparse import ArgumentParser
 import numpy as np
 from datetime import datetime
 from collections import defaultdict
@@ -33,6 +34,12 @@ AROME_GRID_FILE = f'{ROOT_DIR}/arome_grid.npz'
 PROJ = ProjectionInfo()
 
 DX = 2500 # res in m
+
+
+def parse_args():
+    p = ArgumentParser('Plot spectra')
+    p.add_argument('-r', '--record-number', type=int, default=None)
+    return vars(p.parse_args())
 
 
 def parse_file_dates(f):
@@ -174,11 +181,10 @@ def get_leadtimes(fsort):
     times = []
     for bdate, flist in fsort.items():
         for f in flist:
-        print(f'{bdate}: {(f := flist[0])}')
-        with GeoDatasetRead(f) as ds:
-            times += [int((dto - bdate).total_seconds())
-                    for dto in ds.datetimes]
-    return np.array(times)
+            with GeoDatasetRead(f) as ds:
+                times += [int((dto - bdate).total_seconds())
+                        for dto in ds.datetimes]
+        return np.array(sorted(times))
 
 
 def select_uv(time, bdate, flist):
@@ -263,30 +269,32 @@ def get_spectra(fsort, time, arome_mask=None):
     n = n_times * (n_ens - 1)
     pwr_vel_sprd /= n
     pwr_defor_sprd /= n
-    return wn, pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd
 
-
-def get_filename(pattern, time):
-    time_hours = time / 3600
-    return (pattern % time_hours).replace(' ', '0')
-
-
-def save_spectra(time):
-    os.makedirs(OUTDIR, exist_ok=True)
-
-    npz = get_filename(NPZ_PATTERN, time)
-    if os.path.exists(npz):
-        return npz
-
-    (wn, pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd,
-            ) = get_spectra(fsort, time)
-    np.savez(npz, time=time, wn=wn,
+    return dict(
+            wn=wn,
             pwr_vel=pwr_vel,
             pwr_vel_sprd=pwr_vel_sprd,
             pwr_defor=pwr_defor,
             pwr_defor_sprd=pwr_defor_sprd,
             )
-    return npz
+
+
+def get_filename(pattern, time):
+    """
+    get output filename
+
+    Parameters:
+    -----------
+    pattern : str
+    time : int
+        lead time in seconds
+
+    Returns:
+    --------
+    filename : str
+    """
+    time_hours = time / 3600
+    return (pattern % time_hours).replace(' ', '0')
 
 
 def add_asymptote(ax, wn, pwr):
@@ -302,6 +310,15 @@ def add_asymptote(ax, wn, pwr):
 
 
 def plot_spectra(time, wn, pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd):
+    """
+    Parameters:
+    -----------
+    time : int
+    pwr_vel : numpy.ndarray
+    pwr_vel_sprd : numpy.ndarray
+    pwr_defor : numpy.ndarray
+    pwr_defor_sprd : numpy.ndarray
+    """
     figname = get_filename(FIG_PATTERN, time)
     fig = plt.figure(dpi=150)
     ax = fig.add_subplot(111)
@@ -309,8 +326,8 @@ def plot_spectra(time, wn, pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd):
     ax.loglog(wn, pwr_vel_sprd, label="vel (spread)")
     ax.loglog(wn, pwr_defor, label="defor")
     ax.loglog(wn, pwr_defor_sprd, label="defor (spread)")
-    add_asymptote(ax, wn, pwr_vel, -3)
-    add_asymptote(ax, wn, pwr_defor, -1)
+    add_asymptote(ax, wn, pwr_vel)
+    add_asymptote(ax, wn, pwr_defor)
     ax.legend()
     ax.set_title(f"Spectra for lead time {time/3600}h")
     #ax.set_xticks(np.linspace(0,48,9))
@@ -321,15 +338,30 @@ def plot_spectra(time, wn, pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd):
     print(f'Saved {figname}')
 
 
-def run():
+def process_one_time(fsort, time):
+    npz = get_filename(NPZ_PATTERN, time)
+    if os.path.exists(npz):
+        print(f'Loading {npz}')
+        with np.load(npz) as f:
+            kw = dict(f)
+    else:
+        print(f'Making {npz}')
+        kw = get_spectra(fsort, time)
+        os.makedirs(f'{OUTDIR}', exist_ok=True)
+        np.savez(npz, **kw)
+        print(f'Saved {npz}')
+    with np.load(npz) as f:
+        plot_spectra(time, **kw)
+
+
+def run(record_number=None):
     fsort = sort_files()
     times = get_leadtimes(fsort)
+    if record_number is not None:
+        times = [times[record_number]]
     for time in times:
-        npz = save_spectra(time)
-        with np.load(npz) as f:
-            plot_spectra(time, **dict(f))
-        break
+        process_one_time(fsort, time)
 
 
 if __name__ == "__main__":
-    run()
+    run(**parse_args())
