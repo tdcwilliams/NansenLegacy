@@ -23,13 +23,9 @@ ROOT_DIR = ('/cluster/work/users/timill/nextsimf_forecasts/'
 PATTERN = (f'{ROOT_DIR}/merged_files/'
                 'nextsim_ecmwf_arome_ensemble_forecast_*')
 
-OUTDIR = 'out'
-
-NPZ_PATTERN = f'{OUTDIR}/spectra_%4.1fh.npz' # one file for each lead time
-
-FIG_PATTERN = f'{OUTDIR}/spectra_%4.1fh.png' # one file for each lead time
-
 AROME_GRID_FILE = f'{ROOT_DIR}/arome_grid.npz'
+
+OUTFILE_PATTERN = 'spectra_%4.1fh' # one file for each lead time
 
 PROJ = ProjectionInfo()
 
@@ -38,29 +34,33 @@ DX = 2500 # res in m
 
 def parse_args():
     p = ArgumentParser('Plot spectra')
-    p.add_argument('-r', '--record-number', type=int, default=None)
+    p.add_argument('-o', '--outdir', type=str, default='out',
+            help='where to save the output files')
+    p.add_argument('-lts', '--lead-time-step', type=int, default=None,
+            choices=list(range(16)),
+            help='forecast lead time step (0=1.5h, 1=4.5h, ..., 15=46.5h)')
+    p.add_argument('-s', '--snapshot', action='store_true', help=(
+        'if not given we take mean of all forecasts for a given lead-time,'
+        ' otherwise we just take the first example'))
+    p.add_argument('-a', '--arome-domain', action='store_true', help=(
+        'if not given we calculate the spectra over the whole domain,'
+        ' otherwise we only calculate it for the AROME domain'))
     return vars(p.parse_args())
-
-
-def parse_file_dates(f):
-    fdate = datetime.strptime(f[-21:-13], '%Y%m%d')
-    bdate = datetime.strptime(f[-11:-3], '%Y%m%d')
-    return fdate, bdate
 
 
 def sort_files():
     fsort = defaultdict(list)
     for f in sorted(glob.glob(PATTERN)):
-        _, bdate = parse_file_dates(f)
+        bdate = datetime.strptime(f[-11:-3], '%Y%m%d')
         fsort[bdate] += [f]
     return fsort
 
 
-def get_velocity_spectra(u, v, mask2=None):
+def get_velocity_spectra(u, v, arome_mask=None):
     n_ens = u.shape[0]
     good = np.isfinite(u[0])
-    if mask2 is not None:
-        good *= mask2
+    if arome_mask is not None:
+        good *= arome_mask
     mask = ~good
     sum_pwr_vel = 0
     for i in range(n_ens):
@@ -100,12 +100,6 @@ def get_deformation(u, v):
     return np.hypot(shear, div)
 
 
-def get_deformation_all(u, v):
-    n_ens = u.shape[0]
-    return np.array([get_deformation(u[i], v[i])
-        for i in range(n_ens)])
-
-
 def get_deformation_spectra(defor, mask2=None):
     n_ens = defor.shape[0]
     sum_pwr_defor = 0
@@ -115,7 +109,7 @@ def get_deformation_spectra(defor, mask2=None):
     mask = ~good
     for i in range(n_ens):
         print(f'ensemble member {i+1}')
-        defor_ = defor[i]
+        defor_ = np.array(defor[i])
         defor_[mask] = 0
         wn, pwr_defor = pwrspec2d(defor_)
         sum_pwr_defor += pwr_defor
@@ -222,7 +216,8 @@ def get_summed_spectra_snapshot(u, v, **kwargs):
 
     # spectrum of deformation
     print('get spectra of deformation')
-    defor = get_deformation_all(u, v)
+    defor = np.array([get_deformation(u_, v_)
+        for u_,v_ in zip(u,v)])
     (wn, sum_pwr_defor_,
         ) = get_deformation_spectra(defor, **kwargs)
 
@@ -238,29 +233,28 @@ def get_summed_spectra_snapshot(u, v, **kwargs):
             sum_pwr_defor_, sum_pwr_defor_sprd_)
 
 
-def get_spectra(fsort, time, arome_mask=None):
+def get_spectra(fsort, time, arome_mask=None, snapshot=False, **kwargs):
     # store results for full domain
     pwr_vel = 0
     pwr_vel_sprd = 0
     pwr_defor = 0
     pwr_defor_sprd = 0
-    kw = dict(mask2=arome_mask)
 
     for n_times, (bdate, flist) in enumerate(fsort.items()):
-        #if n_times == 2:
-        #    break
         u,v = select_uv(time, bdate, flist)
         n_ens = u.shape[0]
         (wn, sum_pwr_vel_, sum_pwr_dvel_,
                 sum_pwr_defor_, sum_pwr_defor_sprd_,
-                ) = get_summed_spectra_snapshot(u, v, **kw)
+                ) = get_summed_spectra_snapshot(u, v, **kwargs)
         pwr_vel += sum_pwr_vel_
         pwr_vel_sprd += sum_pwr_dvel_
         pwr_defor += sum_pwr_defor_
         pwr_defor_sprd += sum_pwr_defor_sprd_
+        if snapshot:
+            break
+    n_times += 1 # count started at 0 instead of 1
 
     # convert from sums to means
-    n_times += 1 # count started at 0 instead of 1
     n = n_times * n_ens
     pwr_vel /= n
     pwr_defor /= n
@@ -279,24 +273,6 @@ def get_spectra(fsort, time, arome_mask=None):
             )
 
 
-def get_filename(pattern, time):
-    """
-    get output filename
-
-    Parameters:
-    -----------
-    pattern : str
-    time : int
-        lead time in seconds
-
-    Returns:
-    --------
-    filename : str
-    """
-    time_hours = time / 3600
-    return (pattern % time_hours).replace(' ', '0')
-
-
 def add_asymptote(ax, wn, pwr):
     k0, k1 = wn[0], wn[-1]
     kmin = k0 + .5 * (k1 - k0)
@@ -305,11 +281,12 @@ def add_asymptote(ax, wn, pwr):
     y = np.log(pwr[b])
     reg = LinearRegression().fit(x, y)
     pwr_ = np.exp(reg.predict(x))
-    n = reg.coef_[0]
-    ax.loglog(wn[b], pwr_, '--', label=f'{n=}')
+    n = '%4.2f' %reg.coef_[0]
+    ax.loglog(wn[b], pwr_, '--', label=f'n={n}')
 
 
-def plot_spectra(time, wn, pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd):
+def plot_spectra(figname, time, wn,
+        pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd):
     """
     Parameters:
     -----------
@@ -319,7 +296,6 @@ def plot_spectra(time, wn, pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd):
     pwr_defor : numpy.ndarray
     pwr_defor_sprd : numpy.ndarray
     """
-    figname = get_filename(FIG_PATTERN, time)
     fig = plt.figure(dpi=150)
     ax = fig.add_subplot(111)
     ax.loglog(wn, pwr_vel, label="vel")
@@ -331,6 +307,7 @@ def plot_spectra(time, wn, pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd):
     ax.legend()
     ax.set_title(f"Spectra for lead time {time/3600}h")
     #ax.set_xticks(np.linspace(0,48,9))
+    ax.set_ylim([1e-9, 50])
     ax.set_xlabel('Wave number, m$^{-1}$')
     ax.set_ylabel('Power spectral density, ?')
     fig.tight_layout()
@@ -338,29 +315,36 @@ def plot_spectra(time, wn, pwr_vel, pwr_vel_sprd, pwr_defor, pwr_defor_sprd):
     print(f'Saved {figname}')
 
 
-def process_one_time(fsort, time):
-    npz = get_filename(NPZ_PATTERN, time)
+def process_one_time(fsort, time, outdir, **kwargs):
+    basename = (OUTFILE_PATTERN %(time/3600)).replace(' ', '0')
+    if kwargs['snapshot']:
+        basename += '_snapshot'
+    npz = os.path.join(outdir, f'{basename}.npz')
+
     if os.path.exists(npz):
         print(f'Loading {npz}')
         with np.load(npz) as f:
             kw = dict(f)
     else:
         print(f'Making {npz}')
-        kw = get_spectra(fsort, time)
-        os.makedirs(f'{OUTDIR}', exist_ok=True)
+        kw = get_spectra(fsort, time, **kwargs)
+        os.makedirs(outdir, exist_ok=True)
         np.savez(npz, **kw)
         print(f'Saved {npz}')
-    with np.load(npz) as f:
-        plot_spectra(time, **kw)
+
+    figname = npz.replace('.npz', '.png')
+    plot_spectra(figname, time, **kw)
 
 
-def run(record_number=None):
+def run(lead_time_step=None, arome_domain=False, **kwargs):
     fsort = sort_files()
     times = get_leadtimes(fsort)
-    if record_number is not None:
-        times = [times[record_number]]
+    if lead_time_step is not None:
+        times = [times[lead_time_step]]
+
+    arome_mask = get_arome_mask() if arome_domain else None
     for time in times:
-        process_one_time(fsort, time)
+        process_one_time(fsort, time, arome_mask=arome_mask, **kwargs)
 
 
 if __name__ == "__main__":
